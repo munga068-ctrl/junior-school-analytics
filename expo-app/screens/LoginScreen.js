@@ -20,7 +20,19 @@ export default function LoginScreen() {
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
     } catch (e) {
-      setError("Couldn't sign in. Check your email and password.");
+      const code = e?.code || "";
+      const messages = {
+        "auth/invalid-api-key": "Firebase config error: invalid API key. Check firebaseConfig.js.",
+        "auth/api-key-not-valid": "Firebase config error: invalid API key. Check firebaseConfig.js.",
+        "auth/invalid-credential": "Wrong email or password, or this account doesn't exist.",
+        "auth/user-not-found": "No account found for this email.",
+        "auth/wrong-password": "Wrong password.",
+        "auth/too-many-requests": "Too many attempts. Wait a moment and try again.",
+        "auth/network-request-failed": "Network error — check your internet connection.",
+        "auth/operation-not-allowed": "Email/Password sign-in isn't enabled for this Firebase project.",
+        "auth/invalid-email": "That doesn't look like a valid email address.",
+      };
+      setError(messages[code] || `Couldn't sign in (${code || "unknown error"}).`);
     }
     setLoading(false);
   };
