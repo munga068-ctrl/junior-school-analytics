@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
 import { Picker } from "@react-native-picker/picker";
-import { COLORS, getBand } from "../utils/constants";
+import { COLORS, getBand, maxPointsOf } from "../utils/constants";
 import { listenExamScores } from "../utils/db";
 import { generateAndSharePdf, buildClassReportHtml, buildStudentReportCardsHtml } from "../utils/pdf";
 
@@ -21,24 +21,40 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
   const examName = exams.find((e) => e.id === examId)?.name || "";
   const className = classes.find((c) => c.id === classId)?.name || "";
 
+  // Rows are automatically ranked by mean points (1st to last) and returned
+  // in that order, so both the on-screen table and generated PDFs follow it.
   const rows = useMemo(() => {
     const r = classStudents.map((s) => {
       const subjScores = {};
-      let total = 0, count = 0;
+      let total = 0, count = 0, totalPoints = 0;
       subjects.forEach((sub) => {
         const v = data?.[s.id]?.[sub.id];
         subjScores[sub.id] = v;
-        if (v !== undefined && v !== null) { total += Number(v); count++; }
+        if (v !== undefined && v !== null) {
+          total += Number(v);
+          count++;
+          const band = getBand(v, bands);
+          totalPoints += band ? band.points || 0 : 0;
+        }
       });
       const mean = count ? total / count : null;
-      return { student: s, subjScores, total, mean };
+      const meanPoints = count ? totalPoints / count : null;
+      return { student: s, subjScores, total, mean, totalPoints, meanPoints, count };
     });
-    const ranked = [...r].filter((x) => x.mean !== null).sort((a, b) => b.mean - a.mean);
-    r.forEach((x) => { x.rank = x.mean === null ? "—" : ranked.findIndex((y) => y.student.id === x.student.id) + 1; });
-    return r;
-  }, [data, classStudents, subjects]);
 
-  const CELL = 62;
+    const ranked = [...r].filter((x) => x.meanPoints !== null).sort((a, b) => b.meanPoints - a.meanPoints);
+    r.forEach((x) => {
+      x.rank = x.meanPoints === null ? "—" : ranked.findIndex((y) => y.student.id === x.student.id) + 1;
+    });
+
+    return [...r].sort((a, b) => {
+      const ra = a.rank === "—" ? Infinity : a.rank;
+      const rb = b.rank === "—" ? Infinity : b.rank;
+      return ra - rb;
+    });
+  }, [data, classStudents, subjects, bands]);
+
+  const CELL = 58;
 
   const handleGenerate = async (kind) => {
     if (rows.length === 0) return;
@@ -94,29 +110,31 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
           <ScrollView horizontal>
             <View>
               <View style={styles.headerRow}>
-                <Text style={[styles.th, { width: 140 }]}>Student</Text>
+                <Text style={[styles.th, { width: 32 }]}>Rank</Text>
+                <Text style={[styles.th, { width: 130 }]}>Student</Text>
                 {subjects.map((s) => <Text key={s.id} style={[styles.th, { width: CELL, textAlign: "center" }]}>{s.code}</Text>)}
-                <Text style={[styles.th, { width: CELL, textAlign: "center" }]}>Mean</Text>
-                <Text style={[styles.th, { width: 50, textAlign: "center" }]}>Rank</Text>
+                <Text style={[styles.th, { width: CELL, textAlign: "center" }]}>Mean%</Text>
+                <Text style={[styles.th, { width: CELL, textAlign: "center" }]}>Mean Pts</Text>
               </View>
               <ScrollView>
                 {rows.map((r) => (
                   <View key={r.student.id} style={styles.dataRow}>
-                    <Text style={[styles.td, { width: 140, fontWeight: "600" }]} numberOfLines={1}>{r.student.name}</Text>
+                    <Text style={[styles.td, { width: 32, textAlign: "center", fontWeight: "700" }]}>{r.rank}</Text>
+                    <Text style={[styles.td, { width: 130, fontWeight: "600" }]} numberOfLines={1}>{r.student.name}</Text>
                     {subjects.map((s) => {
                       const v = r.subjScores[s.id];
                       const band = getBand(v, bands);
                       return (
                         <Text
                           key={s.id}
-                          style={[styles.td, { width: CELL, textAlign: "center", backgroundColor: band ? band.color + "26" : undefined, color: band ? band.color : COLORS.inkSoft, fontWeight: band ? "700" : "400" }]}
+                          style={[styles.td, { width: CELL, textAlign: "center", backgroundColor: band ? band.color + "33" : undefined, color: COLORS.ink, fontWeight: band ? "700" : "400" }]}
                         >
                           {v === undefined || v === null ? "—" : v}
                         </Text>
                       );
                     })}
                     <Text style={[styles.td, { width: CELL, textAlign: "center", fontWeight: "700" }]}>{r.mean !== null ? r.mean.toFixed(1) : "—"}</Text>
-                    <Text style={[styles.td, { width: 50, textAlign: "center", fontWeight: "700" }]}>{r.rank}</Text>
+                    <Text style={[styles.td, { width: CELL, textAlign: "center", fontWeight: "700" }]}>{r.meanPoints !== null ? r.meanPoints.toFixed(2) : "—"}</Text>
                   </View>
                 ))}
                 {rows.length === 0 && <Text style={styles.hint}>No students in this class.</Text>}
@@ -136,11 +154,11 @@ const styles = StyleSheet.create({
   pdfRow: { flexDirection: "row", gap: 10, marginBottom: 14 },
   pdfBtn: { flex: 1, backgroundColor: COLORS.primary, borderRadius: 6, paddingVertical: 11, alignItems: "center", justifyContent: "center" },
   pdfBtnText: { color: "#fff", fontWeight: "700", fontSize: 12.5 },
-  legend: { flexDirection: "row", flexWrap: "wrap", marginBottom: 10, gap: 12 },
+  legend: { flexDirection: "row", flexWrap: "wrap", marginBottom: 10, gap: 10 },
   legendItem: { flexDirection: "row", alignItems: "center" },
-  legendText: { fontSize: 11.5, color: COLORS.inkSoft },
+  legendText: { fontSize: 11, color: COLORS.inkSoft },
   headerRow: { flexDirection: "row", backgroundColor: COLORS.primary },
-  th: { color: "#fff", fontSize: 11.5, fontWeight: "700", padding: 8 },
+  th: { color: "#fff", fontSize: 11, fontWeight: "700", padding: 8 },
   dataRow: { flexDirection: "row", borderBottomWidth: 1, borderColor: COLORS.border, backgroundColor: "#fff" },
-  td: { fontSize: 12.5, padding: 8, color: COLORS.ink },
+  td: { fontSize: 12, padding: 8, color: COLORS.ink },
 });

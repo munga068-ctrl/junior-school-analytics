@@ -166,9 +166,10 @@ function ExamsTab({ exams }) {
 
 function BandsTab({ bands }) {
   const [local, setLocal] = useState(bands);
+  useEffect(() => { setLocal(bands); }, [bands]);
   return (
     <View style={styles.section}>
-      <Text style={styles.hintSmall}>Adjust score ranges to match your grading framework, then save.</Text>
+      <Text style={styles.hintSmall}>Adjust score ranges and points to match your grading framework, then save.</Text>
       {local.map((b, i) => (
         <View key={b.id} style={styles.bandRow}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
@@ -176,18 +177,27 @@ function BandsTab({ bands }) {
             <Text style={{ fontWeight: "700" }}>{b.short}</Text>
             <Text style={{ color: COLORS.inkSoft, fontSize: 12 }}>{b.label}</Text>
           </View>
-          <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 6, alignItems: "center" }}>
+            <Text style={styles.miniLabel}>Min</Text>
             <TextInput
-              style={[styles.input, { width: 70 }]}
+              style={[styles.input, { width: 55 }]}
               keyboardType="numeric"
               value={String(b.min)}
               onChangeText={(v) => { const next = [...local]; next[i] = { ...b, min: Number(v) || 0 }; setLocal(next); }}
             />
+            <Text style={styles.miniLabel}>Max</Text>
             <TextInput
-              style={[styles.input, { width: 70 }]}
+              style={[styles.input, { width: 55 }]}
               keyboardType="numeric"
               value={String(b.max)}
               onChangeText={(v) => { const next = [...local]; next[i] = { ...b, max: Number(v) || 0 }; setLocal(next); }}
+            />
+            <Text style={styles.miniLabel}>Points</Text>
+            <TextInput
+              style={[styles.input, { width: 55 }]}
+              keyboardType="numeric"
+              value={String(b.points ?? 0)}
+              onChangeText={(v) => { const next = [...local]; next[i] = { ...b, points: Number(v) || 0 }; setLocal(next); }}
             />
           </View>
         </View>
@@ -195,6 +205,7 @@ function BandsTab({ bands }) {
       <TouchableOpacity style={styles.addBtn} onPress={() => saveBands(local)}>
         <Text style={styles.addBtnText}>Save bands</Text>
       </TouchableOpacity>
+
     </View>
   );
 }
@@ -219,4 +230,5 @@ const styles = StyleSheet.create({
   empty: { color: COLORS.inkSoft, fontSize: 13, paddingVertical: 10 },
   hintSmall: { color: COLORS.inkSoft, fontSize: 12.5, marginBottom: 12 },
   bandRow: { borderBottomWidth: 1, borderColor: COLORS.border, paddingVertical: 10 },
+  miniLabel: { fontSize: 11, color: COLORS.inkSoft },
 });
