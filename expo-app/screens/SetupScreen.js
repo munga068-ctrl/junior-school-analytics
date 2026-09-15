@@ -1,13 +1,16 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList } from "react-native";
 import { Picker } from "@react-native-picker/picker";
-import { COLORS, uid } from "../utils/constants";
+import { COLORS } from "../utils/constants";
 import {
   addClass, removeClass, addSubject, removeSubject,
   addStudent, removeStudent, bulkAddStudents, addExam, removeExam, saveBands,
 } from "../utils/db";
 
-const TABS = ["Classes", "Subjects", "Students", "Exams", "Bands"];
+const TABS = ["Classes", "Subjects", "Students", "Exams", "Performance Levels"];
+const GRADES = ["Grade 7", "Grade 8", "Grade 9"];
+const TERMS = ["1", "2", "3"];
+const CURRENT_YEAR = new Date().getFullYear();
 
 export default function SetupScreen({ classes, subjects, students, exams, bands }) {
   const [tab, setTab] = useState("Classes");
@@ -24,7 +27,7 @@ export default function SetupScreen({ classes, subjects, students, exams, bands 
       {tab === "Subjects" && <SubjectsTab subjects={subjects} />}
       {tab === "Students" && <StudentsTab classes={classes} students={students} />}
       {tab === "Exams" && <ExamsTab exams={exams} />}
-      {tab === "Bands" && <BandsTab bands={bands} />}
+      {tab === "Performance Levels" && <BandsTab bands={bands} />}
     </View>
   );
 }
@@ -43,11 +46,21 @@ function Row({ left, right, onRemove }) {
 
 function ClassesTab({ classes, students }) {
   const [name, setName] = useState("");
+  const [grade, setGrade] = useState(GRADES[0]);
   return (
     <View style={styles.section}>
+      <Text style={styles.label}>Add a class / stream</Text>
+      <View style={styles.pickerWrap}>
+        <Picker selectedValue={grade} onValueChange={setGrade}>
+          {GRADES.map((g) => <Picker.Item key={g} label={g} value={g} />)}
+        </Picker>
+      </View>
       <View style={styles.inputRow}>
-        <TextInput style={styles.input} placeholder="e.g. Grade 7 Green" value={name} onChangeText={setName} />
-        <TouchableOpacity style={styles.addBtn} onPress={() => { if (name.trim()) { addClass(name.trim()); setName(""); } }}>
+        <TextInput style={styles.input} placeholder="Stream name, e.g. Green" value={name} onChangeText={setName} />
+        <TouchableOpacity
+          style={styles.addBtn}
+          onPress={() => { if (name.trim()) { addClass(`${grade} ${name.trim()}`, grade); setName(""); } }}
+        >
           <Text style={styles.addBtnText}>Add</Text>
         </TouchableOpacity>
       </View>
@@ -86,7 +99,7 @@ function SubjectsTab({ subjects }) {
 
 function StudentsTab({ classes, students }) {
   const [name, setName] = useState("");
-  const [adm, setAdm] = useState("");
+  const [assessmentNo, setAssessmentNo] = useState("");
   const [classId, setClassId] = useState("");
   const [bulkClassId, setBulkClassId] = useState("");
   const [bulkText, setBulkText] = useState("");
@@ -96,7 +109,7 @@ function StudentsTab({ classes, students }) {
       <Text style={styles.label}>Add a student</Text>
       <View style={styles.inputRow}>
         <TextInput style={[styles.input, { flex: 2 }]} placeholder="Full name" value={name} onChangeText={setName} />
-        <TextInput style={[styles.input, { flex: 1 }]} placeholder="Adm no." value={adm} onChangeText={setAdm} />
+        <TextInput style={[styles.input, { flex: 1 }]} placeholder="Assessment No." value={assessmentNo} onChangeText={setAssessmentNo} />
       </View>
       <View style={styles.pickerWrap}>
         <Picker selectedValue={classId} onValueChange={setClassId}>
@@ -104,11 +117,11 @@ function StudentsTab({ classes, students }) {
           {classes.map((c) => <Picker.Item key={c.id} label={c.name} value={c.id} />)}
         </Picker>
       </View>
-      <TouchableOpacity style={styles.addBtn} onPress={() => { if (name.trim() && classId) { addStudent(name.trim(), adm.trim(), classId); setName(""); setAdm(""); } }}>
+      <TouchableOpacity style={styles.addBtn} onPress={() => { if (name.trim() && classId) { addStudent(name.trim(), assessmentNo.trim(), classId); setName(""); setAssessmentNo(""); } }}>
         <Text style={styles.addBtnText}>Add student</Text>
       </TouchableOpacity>
 
-      <Text style={[styles.label, { marginTop: 20 }]}>Bulk add (one per line: Name, Adm no.)</Text>
+      <Text style={[styles.label, { marginTop: 20 }]}>Bulk add (one per line: Name, Assessment No.)</Text>
       <View style={styles.pickerWrap}>
         <Picker selectedValue={bulkClassId} onValueChange={setBulkClassId}>
           <Picker.Item label="Select class" value="" />
@@ -117,7 +130,7 @@ function StudentsTab({ classes, students }) {
       </View>
       <TextInput
         style={[styles.input, { height: 90, textAlignVertical: "top" }]}
-        placeholder={"Jane Wanjiru, 2201\nBrian Otieno, 2202"}
+        placeholder={"Jane Wanjiru, 7210\nBrian Otieno, 7211"}
         multiline
         value={bulkText}
         onChangeText={setBulkText}
@@ -151,15 +164,34 @@ function StudentsTab({ classes, students }) {
 
 function ExamsTab({ exams }) {
   const [name, setName] = useState("");
+  const [term, setTerm] = useState(TERMS[0]);
+  const [year, setYear] = useState(String(CURRENT_YEAR));
   return (
     <View style={styles.section}>
+      <Text style={styles.label}>Add an exam</Text>
+      <TextInput style={[styles.input, { marginBottom: 10 }]} placeholder="Exam name, e.g. Mid-Term Assessment" value={name} onChangeText={setName} />
       <View style={styles.inputRow}>
-        <TextInput style={styles.input} placeholder="e.g. Term 2 2026 Mid-Term" value={name} onChangeText={setName} />
-        <TouchableOpacity style={styles.addBtn} onPress={() => { if (name.trim()) { addExam(name.trim()); setName(""); } }}>
-          <Text style={styles.addBtnText}>Add</Text>
-        </TouchableOpacity>
+        <View style={[styles.pickerWrap, { flex: 1 }]}>
+          <Picker selectedValue={term} onValueChange={setTerm}>
+            {TERMS.map((t) => <Picker.Item key={t} label={`Term ${t}`} value={t} />)}
+          </Picker>
+        </View>
+        <TextInput style={[styles.input, { flex: 1 }]} placeholder="Year" keyboardType="numeric" value={year} onChangeText={setYear} />
       </View>
-      <FlatList data={exams} keyExtractor={(i) => i.id} renderItem={({ item }) => <Row left={item.name} onRemove={() => removeExam(item.id)} />} />
+      <TouchableOpacity
+        style={styles.addBtn}
+        onPress={() => { if (name.trim()) { addExam(name.trim(), term, Number(year) || CURRENT_YEAR); setName(""); } }}
+      >
+        <Text style={styles.addBtnText}>Add exam</Text>
+      </TouchableOpacity>
+      <FlatList
+        data={exams}
+        keyExtractor={(i) => i.id}
+        renderItem={({ item }) => (
+          <Row left={`${item.name}${item.term ? `  ·  Term ${item.term}` : ""}${item.year ? `  ·  ${item.year}` : ""}`} onRemove={() => removeExam(item.id)} />
+        )}
+        ListEmptyComponent={<Text style={styles.empty}>No exams yet.</Text>}
+      />
     </View>
   );
 }
@@ -172,40 +204,45 @@ function BandsTab({ bands }) {
       <Text style={styles.hintSmall}>Adjust score ranges and points to match your grading framework, then save.</Text>
       {local.map((b, i) => (
         <View key={b.id} style={styles.bandRow}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 }}>
             <View style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: b.color }} />
             <Text style={{ fontWeight: "700" }}>{b.short}</Text>
             <Text style={{ color: COLORS.inkSoft, fontSize: 12 }}>{b.label}</Text>
           </View>
-          <View style={{ flexDirection: "row", gap: 8, marginTop: 6, alignItems: "center" }}>
-            <Text style={styles.miniLabel}>Min</Text>
-            <TextInput
-              style={[styles.input, { width: 55 }]}
-              keyboardType="numeric"
-              value={String(b.min)}
-              onChangeText={(v) => { const next = [...local]; next[i] = { ...b, min: Number(v) || 0 }; setLocal(next); }}
-            />
-            <Text style={styles.miniLabel}>Max</Text>
-            <TextInput
-              style={[styles.input, { width: 55 }]}
-              keyboardType="numeric"
-              value={String(b.max)}
-              onChangeText={(v) => { const next = [...local]; next[i] = { ...b, max: Number(v) || 0 }; setLocal(next); }}
-            />
-            <Text style={styles.miniLabel}>Points</Text>
-            <TextInput
-              style={[styles.input, { width: 55 }]}
-              keyboardType="numeric"
-              value={String(b.points ?? 0)}
-              onChangeText={(v) => { const next = [...local]; next[i] = { ...b, points: Number(v) || 0 }; setLocal(next); }}
-            />
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+            <View>
+              <Text style={styles.miniLabel}>Min</Text>
+              <TextInput
+                style={[styles.input, { width: 64 }]}
+                keyboardType="numeric"
+                value={String(b.min)}
+                onChangeText={(v) => { const next = [...local]; next[i] = { ...b, min: Number(v) || 0 }; setLocal(next); }}
+              />
+            </View>
+            <View>
+              <Text style={styles.miniLabel}>Max</Text>
+              <TextInput
+                style={[styles.input, { width: 64 }]}
+                keyboardType="numeric"
+                value={String(b.max)}
+                onChangeText={(v) => { const next = [...local]; next[i] = { ...b, max: Number(v) || 0 }; setLocal(next); }}
+              />
+            </View>
+            <View>
+              <Text style={styles.miniLabel}>Points</Text>
+              <TextInput
+                style={[styles.input, { width: 64 }]}
+                keyboardType="numeric"
+                value={String(b.points ?? 0)}
+                onChangeText={(v) => { const next = [...local]; next[i] = { ...b, points: Number(v) || 0 }; setLocal(next); }}
+              />
+            </View>
           </View>
         </View>
       ))}
       <TouchableOpacity style={styles.addBtn} onPress={() => saveBands(local)}>
-        <Text style={styles.addBtnText}>Save bands</Text>
+        <Text style={styles.addBtnText}>Save performance levels</Text>
       </TouchableOpacity>
-
     </View>
   );
 }
@@ -215,7 +252,7 @@ const styles = StyleSheet.create({
   tabRow: { flexDirection: "row", flexWrap: "wrap", marginBottom: 12, borderBottomWidth: 1, borderColor: COLORS.border },
   tabBtn: { paddingVertical: 8, paddingHorizontal: 10 },
   tabBtnActive: { borderBottomWidth: 2, borderColor: COLORS.accent },
-  tabText: { color: COLORS.inkSoft, fontSize: 13 },
+  tabText: { color: COLORS.inkSoft, fontSize: 12.5 },
   tabTextActive: { color: COLORS.primary, fontWeight: "700" },
   section: { flex: 1 },
   label: { fontWeight: "700", color: COLORS.primary, marginBottom: 8, fontSize: 13.5 },
@@ -229,6 +266,6 @@ const styles = StyleSheet.create({
   remove: { color: "#C0392B", fontSize: 12.5, fontWeight: "600" },
   empty: { color: COLORS.inkSoft, fontSize: 13, paddingVertical: 10 },
   hintSmall: { color: COLORS.inkSoft, fontSize: 12.5, marginBottom: 12 },
-  bandRow: { borderBottomWidth: 1, borderColor: COLORS.border, paddingVertical: 10 },
-  miniLabel: { fontSize: 11, color: COLORS.inkSoft },
+  bandRow: { borderBottomWidth: 1, borderColor: COLORS.border, paddingVertical: 12 },
+  miniLabel: { fontSize: 11, color: COLORS.inkSoft, marginBottom: 3 },
 });

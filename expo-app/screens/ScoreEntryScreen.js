@@ -43,7 +43,7 @@ export default function ScoreEntryScreen({ classes, subjects, students, exams })
       <View style={styles.pickerWrap}>
         <Picker selectedValue={examId} onValueChange={setExamId}>
           <Picker.Item label="Select exam" value="" />
-          {exams.map((e) => <Picker.Item key={e.id} label={e.name} value={e.id} />)}
+          {exams.map((e) => <Picker.Item key={e.id} label={`${e.name}${e.term ? ` — Term ${e.term}` : ""}${e.year ? ` ${e.year}` : ""}`} value={e.id} />)}
         </Picker>
       </View>
       <View style={styles.pickerWrap}>

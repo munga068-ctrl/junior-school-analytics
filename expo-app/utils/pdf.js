@@ -8,7 +8,7 @@ const esc = (s) =>
 const BASE_STYLE = `
   body { font-family: -apple-system, Helvetica, Arial, sans-serif; color: #1C2B27; }
   h1 { font-size: 18px; color: #1F4B43; margin: 0; }
-  h2 { font-size: 15px; margin: 0 0 2px; color: #1C2B27; }
+  h2 { font-size: 14px; margin: 18px 0 8px; color: #1F4B43; }
   .meta { font-size: 11.5px; color: #5B6A64; }
   table { border-collapse: collapse; width: 100%; }
   th { background: #1F4B43; color: #fff; padding: 6px; font-size: 10.5px; text-align: center; }
@@ -23,6 +23,17 @@ function sortByRank(rows) {
   });
 }
 
+// "Mid-Term Assessment — Term 2, 2026"
+function examLine(exam) {
+  if (!exam) return "";
+  const parts = [exam.name];
+  const meta = [];
+  if (exam.term) meta.push(`Term ${exam.term}`);
+  if (exam.year) meta.push(String(exam.year));
+  if (meta.length) parts.push(meta.join(", "));
+  return parts.join(" — ");
+}
+
 export async function generateAndSharePdf(html, dialogTitle) {
   const { uri } = await Print.printToFileAsync({ html });
   const canShare = await Sharing.isAvailableAsync();
@@ -32,18 +43,21 @@ export async function generateAndSharePdf(html, dialogTitle) {
   return uri;
 }
 
-// ---------- Class report: whole class, ranked 1st to last ----------
-export function buildClassReportHtml({ schoolName, examName, className, subjects, rows, bands }) {
-  const sorted = sortByRank(rows);
-
-  const legend = bands
+function buildLegendHtml(bands) {
+  const items = bands
     .map(
-      (b) => `<span style="display:inline-flex;align-items:center;margin-right:10px;font-size:9.5px;">
-        <span style="width:9px;height:9px;background:${b.color};display:inline-block;margin-right:3px;border-radius:2px;"></span>${esc(b.short)} (${b.min}-${b.max}%)
+      (b) => `<span style="display:inline-flex;align-items:center;margin:0 14px 6px 0;font-size:9.5px;">
+        <span style="width:9px;height:9px;background:${b.color};display:inline-block;margin-right:4px;border-radius:2px;"></span>${esc(b.short)} (${b.min}-${b.max}%)
       </span>`
     )
     .join("");
+  return `<div style="display:flex;flex-wrap:wrap;margin:8px 0 4px;line-height:1.9;">${items}</div>`;
+}
 
+// ---------- Class report: whole class, ranked 1st to last ----------
+export function buildClassReportHtml({ schoolName, exam, className, subjects, rows, bands }) {
+  const sorted = sortByRank(rows);
+  const legend = buildLegendHtml(bands);
   const headerCols = subjects.map((s) => `<th>${esc(s.code)}</th>`).join("");
 
   const bodyRows = sorted
@@ -70,23 +84,16 @@ export function buildClassReportHtml({ schoolName, examName, className, subjects
 
   return `<html><head><meta charset="utf-8" /><style>${BASE_STYLE} body{padding:26px;}</style></head>
   <body>
-    <h1>${esc(schoolName || "School")}</h1>
-    <div class="meta">${esc(examName)} — ${esc(className)}</div>
-    <div style="margin:10px 0 6px;">${legend}</div>
+    <div style="text-align:center;">
+      <h1>${esc(schoolName || "School")}</h1>
+      <div class="meta">${esc(examLine(exam))} — ${esc(className)}</div>
+    </div>
+    ${legend}
     <table>
       <thead><tr><th>Rank</th><th style="text-align:left;">Student</th>${headerCols}<th>Mean%</th><th>Mean Pts</th></tr></thead>
       <tbody>${bodyRows}</tbody>
     </table>
   </body></html>`;
-}
-
-function computeClassAverages(subjects, rows) {
-  const avg = {};
-  subjects.forEach((s) => {
-    const vals = rows.map((r) => r.subjScores[s.id]).filter((v) => v !== undefined && v !== null);
-    avg[s.id] = vals.length ? vals.reduce((a, b) => a + Number(b), 0) / vals.length : null;
-  });
-  return avg;
 }
 
 function buildComparisonChartSvg(subjects, studentScores, classAverages) {
@@ -130,8 +137,17 @@ function buildComparisonChartSvg(subjects, studentScores, classAverages) {
   </svg>`;
 }
 
+function computeClassAverages(subjects, rows) {
+  const avg = {};
+  subjects.forEach((s) => {
+    const vals = rows.map((r) => r.subjScores[s.id]).filter((v) => v !== undefined && v !== null);
+    avg[s.id] = vals.length ? vals.reduce((a, b) => a + Number(b), 0) / vals.length : null;
+  });
+  return avg;
+}
+
 // ---------- Individual report cards, one page per learner, ranked 1st to last ----------
-export function buildStudentReportCardsHtml({ schoolName, examName, className, subjects, rows, bands }) {
+export function buildStudentReportCardsHtml({ schoolName, exam, className, subjects, rows, bands }) {
   const sorted = sortByRank(rows);
   const maxPoints = maxPointsOf(bands);
   const totalMax = subjects.length * 100;
@@ -155,7 +171,7 @@ export function buildStudentReportCardsHtml({ schoolName, examName, className, s
           return `<tr>
             <td>${esc(s.name)}</td>
             <td style="text-align:center;">${v === undefined || v === null ? "—" : v + "%"}</td>
-            <td style="text-align:center;"><span style="background:${chipBg};color:#1C2B27;font-weight:700;padding:2px 8px;border-radius:10px;">${
+            <td style="text-align:center;"><span style="background:${chipBg};color:#1C2B27;font-weight:700;padding:3px 9px;border-radius:10px;display:inline-block;">${
               band ? esc(band.short) : "—"
             }</span></td>
             <td style="font-size:10px;color:#5B6A64;">${esc(AUTO_COMMENTS[band?.short] || "")}</td>
@@ -169,11 +185,11 @@ export function buildStudentReportCardsHtml({ schoolName, examName, className, s
       return `<div style="page-break-after:always;padding:28px;">
         <div style="border-bottom:3px solid #1F4B43;padding-bottom:8px;margin-bottom:14px;">
           <h1>${esc(schoolName || "School")}</h1>
-          <div class="meta">${esc(examName)} — ${esc(className)} &middot; Academic Report</div>
+          <div class="meta">${esc(examLine(exam))} — ${esc(className)} &middot; Academic Report</div>
         </div>
 
-        <h2>${esc(r.student.name)}</h2>
-        <div class="meta" style="margin-bottom:12px;">Adm. No. ${esc(r.student.admNo || "—")} &middot; ${esc(className)}</div>
+        <h2 style="margin-top:0;">${esc(r.student.name)}</h2>
+        <div class="meta" style="margin-bottom:12px;">Assessment No. ${esc(r.student.admNo || "—")} &middot; ${esc(className)}</div>
 
         <div style="display:flex;gap:8px;margin-bottom:16px;">
           ${summaryBox("Performance Level", overallBand ? overallBand.short : "—")}
@@ -232,4 +248,102 @@ function buildDescriptorTableHtml(bands) {
       <tr><td style="text-align:left;font-weight:600;">Range (%)</td>${ranges}</tr>
     </tbody>
   </table>`;
+}
+
+// ---------- Generic horizontal bar chart, used by the Analysis report ----------
+function buildBarChartSvg(items, { maxVal, unit = "", colors = ["#1F4B43", "#D9A441", "#6B8E23", "#C0392B", "#2E6B5E", "#8E5FB0"] }) {
+  const rowH = 26;
+  const labelW = 130;
+  const W = 500;
+  const barMaxW = W - labelW - 70;
+  const H = Math.max(1, items.length) * rowH + 16;
+
+  const bars = items
+    .map((it, i) => {
+      const y = 10 + i * rowH;
+      const w = maxVal > 0 ? (it.value / maxVal) * barMaxW : 0;
+      const color = colors[i % colors.length];
+      return `
+        <text x="${labelW - 8}" y="${y + 13}" font-size="9.5" fill="#1C2B27" text-anchor="end">${esc(it.label)}</text>
+        <rect x="${labelW}" y="${y}" width="${Math.max(2, w)}" height="16" rx="3" fill="${color}" />
+        <text x="${labelW + Math.max(2, w) + 6}" y="${y + 13}" font-size="9.5" fill="#5B6A64">${it.value.toFixed(2)}${unit}</text>
+      `;
+    })
+    .join("");
+
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${bars}</svg>`;
+}
+
+// ---------- Cross-grade / cross-stream Analysis report ----------
+export function buildAnalysisReportHtml({ schoolName, exam, analysis, bands }) {
+  const maxPoints = maxPointsOf(bands);
+
+  const gradeChart = buildBarChartSvg(
+    analysis.gradeStats.map((g) => ({ label: `#${g.rank} ${g.grade}`, value: g.meanPoints })),
+    { maxVal: maxPoints, unit: " pts" }
+  );
+  const streamChart = buildBarChartSvg(
+    analysis.streamStats.map((s) => ({ label: `#${s.rank} ${s.className}`, value: s.meanPoints })),
+    { maxVal: maxPoints, unit: " pts" }
+  );
+
+  const subjTableHeader = analysis.gradesPresent.map((g) => `<th>${esc(g)}</th>`).join("");
+  const subjRows = analysis.subjectByGrade
+    .map((row) => {
+      const cells = analysis.gradesPresent
+        .map((g) => {
+          const v = row.perGrade[g];
+          const band = v !== null ? getBand(v, bands) : null;
+          const bg = band ? band.color + "33" : "#fff";
+          return `<td style="text-align:center;background:${bg};font-weight:${band ? 700 : 400};">${v !== null ? v.toFixed(1) : "—"}</td>`;
+        })
+        .join("");
+      return `<tr><td style="text-align:left;">${esc(row.subject.name)}</td>${cells}</tr>`;
+    })
+    .join("");
+
+  const markSheets = analysis.gradesPresent
+    .map((g) => {
+      const rows = analysis.gradeMarkSheets[g]
+        .map(
+          (r) => `<tr>
+            <td style="text-align:center;font-weight:700;">${r.gradeRank}</td>
+            <td style="text-align:left;font-weight:600;">${esc(r.student.name)}</td>
+            <td style="text-align:left;">${esc(r.classObj?.name || "—")}</td>
+            <td style="text-align:center;">${r.mean !== null ? r.mean.toFixed(1) : "—"}</td>
+            <td style="text-align:center;font-weight:700;">${r.meanPoints !== null ? r.meanPoints.toFixed(2) : "—"}</td>
+          </tr>`
+        )
+        .join("");
+      return `<div style="page-break-before:always;padding-top:26px;">
+        <h2>${esc(g)} — General Mark Sheet (all streams combined)</h2>
+        <table>
+          <thead><tr><th>Rank</th><th style="text-align:left;">Student</th><th style="text-align:left;">Stream</th><th>Mean%</th><th>Mean Pts</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+    })
+    .join("");
+
+  return `<html><head><meta charset="utf-8" /><style>${BASE_STYLE} body{padding:26px;}</style></head>
+  <body>
+    <div style="text-align:center;">
+      <h1>${esc(schoolName || "School")}</h1>
+      <div class="meta">${esc(examLine(exam))} &middot; Performance Analysis</div>
+    </div>
+
+    <h2>Grade Ranking</h2>
+    ${gradeChart}
+
+    <h2>Stream Performance</h2>
+    ${streamChart}
+
+    <h2>Subject Performance Across Grades</h2>
+    <table>
+      <thead><tr><th style="text-align:left;">Subject</th>${subjTableHeader}</tr></thead>
+      <tbody>${subjRows}</tbody>
+    </table>
+
+    ${markSheets}
+  </body></html>`;
 }

@@ -18,7 +18,8 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
   }, [examId]);
 
   const classStudents = students.filter((s) => s.classId === classId);
-  const examName = exams.find((e) => e.id === examId)?.name || "";
+  const exam = exams.find((e) => e.id === examId);
+  const examName = exam?.name || "";
   const className = classes.find((c) => c.id === classId)?.name || "";
 
   // Rows are automatically ranked by mean points (1st to last) and returned
@@ -60,7 +61,7 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
     if (rows.length === 0) return;
     setGenerating(kind);
     try {
-      const args = { schoolName, examName, className, subjects, rows, bands };
+      const args = { schoolName, exam, className, subjects, rows, bands };
       const html = kind === "class" ? buildClassReportHtml(args) : buildStudentReportCardsHtml(args);
       await generateAndSharePdf(html, kind === "class" ? "Class report" : "Report cards");
     } catch (e) {
@@ -74,7 +75,7 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
       <View style={styles.pickerWrap}>
         <Picker selectedValue={examId} onValueChange={setExamId}>
           <Picker.Item label="Select exam" value="" />
-          {exams.map((e) => <Picker.Item key={e.id} label={e.name} value={e.id} />)}
+          {exams.map((e) => <Picker.Item key={e.id} label={`${e.name}${e.term ? ` — Term ${e.term}` : ""}${e.year ? ` ${e.year}` : ""}`} value={e.id} />)}
         </Picker>
       </View>
       <View style={styles.pickerWrap}>
@@ -154,8 +155,8 @@ const styles = StyleSheet.create({
   pdfRow: { flexDirection: "row", gap: 10, marginBottom: 14 },
   pdfBtn: { flex: 1, backgroundColor: COLORS.primary, borderRadius: 6, paddingVertical: 11, alignItems: "center", justifyContent: "center" },
   pdfBtnText: { color: "#fff", fontWeight: "700", fontSize: 12.5 },
-  legend: { flexDirection: "row", flexWrap: "wrap", marginBottom: 10, gap: 10 },
-  legendItem: { flexDirection: "row", alignItems: "center" },
+  legend: { flexDirection: "row", flexWrap: "wrap", marginBottom: 10, rowGap: 8, columnGap: 12 },
+  legendItem: { flexDirection: "row", alignItems: "center", marginBottom: 2 },
   legendText: { fontSize: 11, color: COLORS.inkSoft },
   headerRow: { flexDirection: "row", backgroundColor: COLORS.primary },
   th: { color: "#fff", fontSize: 11, fontWeight: "700", padding: 8 },

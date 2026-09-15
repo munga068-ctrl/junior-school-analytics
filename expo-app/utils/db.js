@@ -45,20 +45,20 @@ export function listenExamScores(examId, cb) {
 }
 
 // Writes
-export const addClass = (name) => addDoc(collection(db, "classes"), { name });
+export const addClass = (name, grade) => addDoc(collection(db, "classes"), { name, grade });
 export const removeClass = (id) => deleteDoc(doc(db, "classes", id));
 
 export const addSubject = (name, code) => addDoc(collection(db, "subjects"), { name, code });
 export const removeSubject = (id) => deleteDoc(doc(db, "subjects", id));
 
-export const addStudent = (name, admNo, classId) =>
-  addDoc(collection(db, "students"), { name, admNo, classId });
+export const addStudent = (name, assessmentNo, classId) =>
+  addDoc(collection(db, "students"), { name, admNo: assessmentNo, classId });
 export const removeStudent = (id) => deleteDoc(doc(db, "students", id));
 export const bulkAddStudents = async (rows) => {
   await Promise.all(rows.map((r) => addDoc(collection(db, "students"), r)));
 };
 
-export const addExam = (name) => addDoc(collection(db, "exams"), { name });
+export const addExam = (name, term, year) => addDoc(collection(db, "exams"), { name, term, year });
 export const removeExam = (id) => deleteDoc(doc(db, "exams", id));
 
 export const saveBands = (list) => setDoc(doc(db, "settings", "bands"), { list });

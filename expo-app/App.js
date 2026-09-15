@@ -15,6 +15,7 @@ import DashboardScreen from "./screens/DashboardScreen";
 import SetupScreen from "./screens/SetupScreen";
 import ScoreEntryScreen from "./screens/ScoreEntryScreen";
 import ReportsScreen from "./screens/ReportsScreen";
+import AnalysisScreen from "./screens/AnalysisScreen";
 
 const Tab = createBottomTabNavigator();
 
@@ -110,6 +111,16 @@ export default function App() {
           }}
         >
           {() => <ReportsScreen classes={classes} subjects={subjects} students={students} exams={exams} bands={bands} schoolName={meta?.schoolName} />}
+        </Tab.Screen>
+        <Tab.Screen
+          name="Analysis"
+          options={{
+            tabBarIcon: ({ color, size, focused }) => (
+              <Ionicons name={focused ? "analytics" : "analytics-outline"} size={size} color={color} />
+            ),
+          }}
+        >
+          {() => <AnalysisScreen classes={classes} subjects={subjects} students={students} exams={exams} bands={bands} schoolName={meta?.schoolName} />}
         </Tab.Screen>
       </Tab.Navigator>
     </NavigationContainer>
