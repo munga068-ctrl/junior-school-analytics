@@ -18,6 +18,12 @@
         "backgroundColor": "#1F4B43"
       }
     },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/43ca3a5b-bade-4f21-808c-abcefbf79493"
+    },
     "extra": {
       "eas": {
         "projectId": "43ca3a5b-bade-4f21-808c-abcefbf79493"

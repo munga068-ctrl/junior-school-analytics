@@ -60,3 +60,35 @@ To install a local `preview` build profile that produces an APK (not an .aab), m
 ## 6. Install on a device
 Download the `.apk` from the link EAS gives you, transfer it to an Android phone, and open
 it to install (you may need to allow "install from unknown sources" once).
+
+## 7. Over-the-air (OTA) updates — no reinstall needed for JS-only changes
+
+The app is wired for **EAS Update**. Once every teacher has the APK from step 6 installed
+(this build already includes the `expo-updates` runtime), future **JS-only** changes —
+new screens, logic fixes, report layout tweaks, style changes — can be pushed straight to
+everyone's phones without a new APK.
+
+**One-time setup (do this once, after pulling the update-enabled app.json/package.json):**
+```
+npm install
+eas build -p android --profile preview
+```
+Install this build once on every teacher's phone. This is the *last* time you need to
+reinstall an APK for a JS-only change.
+
+**From then on, to ship a JS-only change:**
+```
+eas update --branch preview --message "Describe what changed"
+```
+The app checks for updates on launch and applies them automatically (a restart of the app
+picks up the new version — no app store, no APK, no reinstalling).
+
+**When you DO still need a new APK (not just `eas update`):**
+- Adding a new native package (anything with native/platform code)
+- Changing `app.json` settings like icon, splash, package name, or permissions
+- Upgrading the Expo SDK version
+
+If unsure whether a change needs a rebuild, ask: "does this only touch `.js` files and
+plain JSON data, with no new packages in `package.json` that have native code?" — if yes,
+`eas update` is enough.
+
