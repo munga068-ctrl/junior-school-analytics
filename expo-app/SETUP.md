@@ -92,3 +92,25 @@ If unsure whether a change needs a rebuild, ask: "does this only touch `.js` fil
 plain JSON data, with no new packages in `package.json` that have native code?" — if yes,
 `eas update` is enough.
 
+## 8. Automating it with EAS Workflows
+
+Two workflow files live in `.eas/workflows/`:
+
+- **`publish-update.yml`** — runs automatically on every push to `main`. Publishes a
+  JS-only OTA update to the `preview` channel, so most changes reach teachers' phones
+  without you typing `eas update` yourself.
+- **`build-preview.yml`** — manual only (does not run on push, so it never eats into
+  your build-minute quota by accident). Trigger it from the EAS dashboard's
+  **Run workflow** button, or with `eas workflow:run .eas/workflows/build-preview.yml`,
+  whenever a change needs a real rebuild (see the list above).
+
+**One-time setup to make `push`-triggered workflows fire at all:**
+1. On the [expo.dev dashboard](https://expo.dev), open this project → **Project settings** → **GitHub**.
+2. Connect your GitHub repo and authorize the Expo GitHub App.
+3. If asked for a **base directory** (since the Expo app lives in `expo-app/`, not the
+   repo root), set it to `expo-app`.
+
+Once connected, every push to `main` will show up under the **Workflows** tab and
+auto-publish an update. No connection needed for the manual build workflow — you can run
+that anytime from the dashboard regardless of GitHub App status.
+

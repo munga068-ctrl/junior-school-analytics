@@ -1,0 +1,22 @@
+name: Publish OTA update
+
+# Runs automatically on every push to main. Publishes a JS-only update to the
+# "preview" channel that all installed APKs are already listening on (set up
+# via app.json's updates.url and eas.json's preview.channel). No native build,
+# no reinstalling — teachers get the change next time they open the app.
+#
+# This does NOT rebuild the APK. If a change adds a native package or touches
+# app.json's icon/splash/package/permissions, run the "Build Android APK
+# (preview)" workflow manually instead (or eas build -p android --profile preview).
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  publish_update:
+    name: Publish update to preview channel
+    type: update
+    params:
+      channel: preview
+      message: ${{ github.commit_message }}
