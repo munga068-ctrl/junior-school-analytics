@@ -80,6 +80,56 @@ export function buildClassReportHtml({ schoolName, examName, className, subjects
   </body></html>`;
 }
 
+function computeClassAverages(subjects, rows) {
+  const avg = {};
+  subjects.forEach((s) => {
+    const vals = rows.map((r) => r.subjScores[s.id]).filter((v) => v !== undefined && v !== null);
+    avg[s.id] = vals.length ? vals.reduce((a, b) => a + Number(b), 0) / vals.length : null;
+  });
+  return avg;
+}
+
+function buildComparisonChartSvg(subjects, studentScores, classAverages) {
+  const W = 500, H = 150, padL = 26, padR = 8, padT = 10, padB = 22;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const n = subjects.length;
+  const xStep = n > 1 ? plotW / (n - 1) : 0;
+  const xFor = (i) => padL + i * xStep;
+  const yFor = (v) => padT + plotH - (Math.max(0, Math.min(100, v)) / 100) * plotH;
+
+  const grid = [0, 25, 50, 75, 100]
+    .map(
+      (v) => `<line x1="${padL}" y1="${yFor(v)}" x2="${W - padR}" y2="${yFor(v)}" stroke="#EEF1EE" stroke-width="1" />
+      <text x="${padL - 4}" y="${yFor(v) + 3}" font-size="7" fill="#9AA6A0" text-anchor="end">${v}</text>`
+    )
+    .join("");
+
+  const classPts = subjects.map((s, i) => `${xFor(i)},${yFor(classAverages[s.id] ?? 0)}`).join(" ");
+  const classDots = subjects
+    .map((s, i) => `<circle cx="${xFor(i)}" cy="${yFor(classAverages[s.id] ?? 0)}" r="2.5" fill="#D9A441" />`)
+    .join("");
+
+  const presentIdx = subjects.map((s, i) => (studentScores[s.id] != null ? i : null)).filter((i) => i !== null);
+  const studentPts = presentIdx.map((i) => `${xFor(i)},${yFor(studentScores[subjects[i].id])}`).join(" ");
+  const studentDots = presentIdx
+    .map((i) => `<circle cx="${xFor(i)}" cy="${yFor(studentScores[subjects[i].id])}" r="3" fill="#1F4B43" />`)
+    .join("");
+
+  const xLabels = subjects
+    .map((s, i) => `<text x="${xFor(i)}" y="${H - 6}" font-size="8" fill="#5B6A64" text-anchor="middle">${esc(s.code)}</text>`)
+    .join("");
+
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+    ${grid}
+    <polyline points="${classPts}" fill="none" stroke="#D9A441" stroke-width="2" />
+    ${classDots}
+    <polyline points="${studentPts}" fill="none" stroke="#1F4B43" stroke-width="2" />
+    ${studentDots}
+    ${xLabels}
+  </svg>`;
+}
+
 // ---------- Individual report cards, one page per learner, ranked 1st to last ----------
 export function buildStudentReportCardsHtml({ schoolName, examName, className, subjects, rows, bands }) {
   const sorted = sortByRank(rows);
@@ -87,6 +137,7 @@ export function buildStudentReportCardsHtml({ schoolName, examName, className, s
   const totalMax = subjects.length * 100;
   const pointsMax = subjects.length * maxPoints;
   const descriptorHtml = buildDescriptorTableHtml(bands);
+  const classAverages = computeClassAverages(subjects, rows);
 
   const summaryBox = (label, value) => `
     <div style="flex:1;border:1px solid #DBE1DA;border-radius:6px;padding:8px;text-align:center;">
@@ -113,6 +164,7 @@ export function buildStudentReportCardsHtml({ schoolName, examName, className, s
         .join("");
 
       const overallBand = getBand(r.mean, bands);
+      const chartSvg = buildComparisonChartSvg(subjects, r.subjScores, classAverages);
 
       return `<div style="page-break-after:always;padding:28px;">
         <div style="border-bottom:3px solid #1F4B43;padding-bottom:8px;margin-bottom:14px;">
@@ -129,6 +181,17 @@ export function buildStudentReportCardsHtml({ schoolName, examName, className, s
           ${summaryBox("Total Points", `${r.totalPoints.toFixed(1)}/${pointsMax.toFixed(1)}`)}
           ${summaryBox("Mean Points", r.meanPoints !== null ? `${r.meanPoints.toFixed(2)}/${maxPoints.toFixed(1)}` : "—")}
           ${summaryBox("Class Rank", `${r.rank} of ${sorted.length}`)}
+        </div>
+
+        <div style="margin-bottom:14px;">
+          <div style="font-weight:700;font-size:10px;color:#1F4B43;margin-bottom:2px;">
+            SUBJECT PERFORMANCE — LEARNER vs CLASS AVERAGE
+          </div>
+          <div style="font-size:9px;color:#5B6A64;margin-bottom:4px;">
+            <span style="color:#1F4B43;">&#9632;</span> ${esc(r.student.name.split(" ")[0])}
+            &nbsp;&nbsp;<span style="color:#D9A441;">&#9632;</span> Class average
+          </div>
+          ${chartSvg}
         </div>
 
         <table>
