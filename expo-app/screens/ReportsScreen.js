@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import { COLORS, getBand } from "../utils/constants";
 import { listenExamScores } from "../utils/db";
+import { generateAndSharePdf, buildClassReportHtml, buildStudentReportCardsHtml } from "../utils/pdf";
 
-export default function ReportsScreen({ classes, subjects, students, exams, bands }) {
+export default function ReportsScreen({ classes, subjects, students, exams, bands, schoolName }) {
   const [examId, setExamId] = useState("");
   const [classId, setClassId] = useState("");
   const [data, setData] = useState({});
+  const [generating, setGenerating] = useState("");
 
   useEffect(() => {
     if (!examId) return;
@@ -16,6 +18,8 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
   }, [examId]);
 
   const classStudents = students.filter((s) => s.classId === classId);
+  const examName = exams.find((e) => e.id === examId)?.name || "";
+  const className = classes.find((c) => c.id === classId)?.name || "";
 
   const rows = useMemo(() => {
     const r = classStudents.map((s) => {
@@ -36,6 +40,19 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
 
   const CELL = 62;
 
+  const handleGenerate = async (kind) => {
+    if (rows.length === 0) return;
+    setGenerating(kind);
+    try {
+      const args = { schoolName, examName, className, subjects, rows, bands };
+      const html = kind === "class" ? buildClassReportHtml(args) : buildStudentReportCardsHtml(args);
+      await generateAndSharePdf(html, kind === "class" ? "Class report" : "Report cards");
+    } catch (e) {
+      Alert.alert("Couldn't generate PDF", e?.message || "Something went wrong. Try again.");
+    }
+    setGenerating("");
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.pickerWrap}>
@@ -55,6 +72,17 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
 
       {examId && classId && (
         <>
+          {rows.length > 0 && (
+            <View style={styles.pdfRow}>
+              <TouchableOpacity style={styles.pdfBtn} onPress={() => handleGenerate("class")} disabled={!!generating}>
+                {generating === "class" ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.pdfBtnText}>Class report (PDF)</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.pdfBtn} onPress={() => handleGenerate("cards")} disabled={!!generating}>
+                {generating === "cards" ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.pdfBtnText}>Report cards (PDF)</Text>}
+              </TouchableOpacity>
+            </View>
+          )}
+
           <View style={styles.legend}>
             {bands.map((b) => (
               <View key={b.id} style={styles.legendItem}>
@@ -105,6 +133,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg, padding: 14 },
   pickerWrap: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 6, backgroundColor: "#fff", marginBottom: 10 },
   hint: { color: COLORS.inkSoft, fontSize: 13.5, marginTop: 10 },
+  pdfRow: { flexDirection: "row", gap: 10, marginBottom: 14 },
+  pdfBtn: { flex: 1, backgroundColor: COLORS.primary, borderRadius: 6, paddingVertical: 11, alignItems: "center", justifyContent: "center" },
+  pdfBtnText: { color: "#fff", fontWeight: "700", fontSize: 12.5 },
   legend: { flexDirection: "row", flexWrap: "wrap", marginBottom: 10, gap: 12 },
   legendItem: { flexDirection: "row", alignItems: "center" },
   legendText: { fontSize: 11.5, color: COLORS.inkSoft },

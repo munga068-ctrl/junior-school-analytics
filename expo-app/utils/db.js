@@ -31,6 +31,12 @@ export function listenBands(cb) {
     cb(snap.exists() ? snap.data().list : DEFAULT_BANDS)
   );
 }
+export function listenMeta(cb) {
+  return onSnapshot(doc(db, "settings", "meta"), (snap) =>
+    cb(snap.exists() ? snap.data() : { schoolName: "" })
+  );
+}
+export const saveMeta = (data) => setDoc(doc(db, "settings", "meta"), data);
 export function listenExamScores(examId, cb) {
   if (!examId) return () => {};
   return onSnapshot(doc(db, "scores", examId), (snap) =>

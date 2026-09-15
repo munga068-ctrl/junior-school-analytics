@@ -6,7 +6,7 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { onAuthStateChanged } from "firebase/auth";
 
 import { auth } from "./firebaseConfig";
-import { listenClasses, listenSubjects, listenStudents, listenExams, listenBands } from "./utils/db";
+import { listenClasses, listenSubjects, listenStudents, listenExams, listenBands, listenMeta } from "./utils/db";
 import { DEFAULT_BANDS, COLORS } from "./utils/constants";
 
 import LoginScreen from "./screens/LoginScreen";
@@ -26,6 +26,7 @@ export default function App() {
   const [students, setStudents] = useState([]);
   const [exams, setExams] = useState([]);
   const [bands, setBands] = useState(DEFAULT_BANDS);
+  const [meta, setMeta] = useState({ schoolName: "" });
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -43,6 +44,7 @@ export default function App() {
       listenStudents(setStudents),
       listenExams(setExams),
       listenBands(setBands),
+      listenMeta(setMeta),
     ];
     return () => unsubs.forEach((u) => u && u());
   }, [user]);
@@ -69,7 +71,7 @@ export default function App() {
       <StatusBar style="dark" />
       <Tab.Navigator screenOptions={{ headerStyle: { backgroundColor: COLORS.primary }, headerTintColor: "#fff", tabBarActiveTintColor: COLORS.primary }}>
         <Tab.Screen name="Dashboard">
-          {() => <DashboardScreen classes={classes} subjects={subjects} students={students} exams={exams} />}
+          {() => <DashboardScreen classes={classes} subjects={subjects} students={students} exams={exams} meta={meta} />}
         </Tab.Screen>
         <Tab.Screen name="Setup">
           {() => <SetupScreen classes={classes} subjects={subjects} students={students} exams={exams} bands={bands} />}
@@ -78,7 +80,7 @@ export default function App() {
           {() => <ScoreEntryScreen classes={classes} subjects={subjects} students={students} exams={exams} />}
         </Tab.Screen>
         <Tab.Screen name="Reports">
-          {() => <ReportsScreen classes={classes} subjects={subjects} students={students} exams={exams} bands={bands} />}
+          {() => <ReportsScreen classes={classes} subjects={subjects} students={students} exams={exams} bands={bands} schoolName={meta?.schoolName} />}
         </Tab.Screen>
       </Tab.Navigator>
     </NavigationContainer>
