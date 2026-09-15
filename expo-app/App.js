@@ -3,6 +3,7 @@ import { View, ActivityIndicator } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { NavigationContainer } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { Ionicons } from "@expo/vector-icons";
 import { onAuthStateChanged } from "firebase/auth";
 
 import { auth } from "./firebaseConfig";
@@ -70,16 +71,44 @@ export default function App() {
     <NavigationContainer>
       <StatusBar style="dark" />
       <Tab.Navigator screenOptions={{ headerStyle: { backgroundColor: COLORS.primary }, headerTintColor: "#fff", tabBarActiveTintColor: COLORS.primary }}>
-        <Tab.Screen name="Dashboard">
+        <Tab.Screen
+          name="Dashboard"
+          options={{
+            tabBarIcon: ({ color, size, focused }) => (
+              <Ionicons name={focused ? "home" : "home-outline"} size={size} color={color} />
+            ),
+          }}
+        >
           {() => <DashboardScreen classes={classes} subjects={subjects} students={students} exams={exams} meta={meta} />}
         </Tab.Screen>
-        <Tab.Screen name="Setup">
+        <Tab.Screen
+          name="Setup"
+          options={{
+            tabBarIcon: ({ color, size, focused }) => (
+              <Ionicons name={focused ? "settings" : "settings-outline"} size={size} color={color} />
+            ),
+          }}
+        >
           {() => <SetupScreen classes={classes} subjects={subjects} students={students} exams={exams} bands={bands} />}
         </Tab.Screen>
-        <Tab.Screen name="Score entry">
+        <Tab.Screen
+          name="Score entry"
+          options={{
+            tabBarIcon: ({ color, size, focused }) => (
+              <Ionicons name={focused ? "create" : "create-outline"} size={size} color={color} />
+            ),
+          }}
+        >
           {() => <ScoreEntryScreen classes={classes} subjects={subjects} students={students} exams={exams} />}
         </Tab.Screen>
-        <Tab.Screen name="Reports">
+        <Tab.Screen
+          name="Reports"
+          options={{
+            tabBarIcon: ({ color, size, focused }) => (
+              <Ionicons name={focused ? "bar-chart" : "bar-chart-outline"} size={size} color={color} />
+            ),
+          }}
+        >
           {() => <ReportsScreen classes={classes} subjects={subjects} students={students} exams={exams} bands={bands} schoolName={meta?.schoolName} />}
         </Tab.Screen>
       </Tab.Navigator>
