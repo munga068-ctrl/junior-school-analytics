@@ -114,3 +114,5 @@ Once connected, every push to `main` will show up under the **Workflows** tab an
 auto-publish an update. No connection needed for the manual build workflow — you can run
 that anytime from the dashboard regardless of GitHub App status.
 
+
+<!-- Workflow test: confirming publish-update.yml triggers on push to main. -->
