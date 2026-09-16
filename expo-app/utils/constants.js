@@ -32,6 +32,28 @@ export const AUTO_COMMENTS = {
   BE2: "Serious concern — needs urgent intervention.",
 };
 
+export const CLASS_TEACHER_REMARKS = {
+  EE1: "You have consistently exceeded expectations this term. Outstanding effort — keep it up!",
+  EE2: "Excellent, consistent performance this term. Well done — keep pushing for even more.",
+  ME1: "You are meeting expectations well. Keep working hard to reach the next level.",
+  ME2: "A fair performance this term. With more consistent effort you can improve further.",
+  AE1: "You are approaching the expected standard. More effort and support will help you grow.",
+  AE2: "Your performance needs closer attention. Please put in extra practice going forward.",
+  BE1: "You are struggling this term and need targeted support. Let's work together to improve.",
+  BE2: "This is a serious concern. Urgent intervention and support are needed.",
+};
+
+export const HEAD_TEACHER_REMARKS = {
+  EE1: "An excellent result. Keep up this outstanding standard of work.",
+  EE2: "A very strong performance. Continue with this commendable effort.",
+  ME1: "A good, steady performance. Keep building on this foundation.",
+  ME2: "A fair result with room to grow. Stay focused and keep improving.",
+  AE1: "Performance is below the expected standard. More effort is required.",
+  AE2: "This performance needs significant improvement. Please seek extra support.",
+  BE1: "A concerning result. Close support and follow-up are needed.",
+  BE2: "A very concerning result requiring urgent intervention and support.",
+};
+
 export const COLORS = {
   bg: "#F5F6F2",
   surface: "#FFFFFF",

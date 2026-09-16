@@ -1,6 +1,6 @@
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
-import { getBand, maxPointsOf, AUTO_COMMENTS } from "./constants";
+import { getBand, maxPointsOf, AUTO_COMMENTS, CLASS_TEACHER_REMARKS, HEAD_TEACHER_REMARKS } from "./constants";
 
 const esc = (s) =>
   String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -27,10 +27,10 @@ function sortByRank(rows) {
 function examLine(exam) {
   if (!exam) return "";
   const parts = [exam.name];
-  const meta = [];
-  if (exam.term) meta.push(`Term ${exam.term}`);
-  if (exam.year) meta.push(String(exam.year));
-  if (meta.length) parts.push(meta.join(", "));
+  const metaParts = [];
+  if (exam.term) metaParts.push(`Term ${exam.term}`);
+  if (exam.year) metaParts.push(String(exam.year));
+  if (metaParts.length) parts.push(metaParts.join(", "));
   return parts.join(" — ");
 }
 
@@ -54,8 +54,35 @@ function buildLegendHtml(bands) {
   return `<div style="display:flex;flex-wrap:wrap;margin:8px 0 4px;line-height:1.9;">${items}</div>`;
 }
 
+// Centered school header block used by every report type.
+function buildSchoolHeaderHtml(meta) {
+  const contactLine = [meta?.address, meta?.tel ? `Tel: ${meta.tel}` : null, meta?.email]
+    .filter(Boolean)
+    .map(esc)
+    .join(" &middot; ");
+  return `<div style="text-align:center;border-bottom:3px solid #1F4B43;padding-bottom:10px;margin-bottom:14px;">
+    ${meta?.logoUrl ? `<img src="${esc(meta.logoUrl)}" style="height:48px;margin-bottom:6px;" />` : ""}
+    <h1>${esc(meta?.schoolName || "School")}</h1>
+    ${contactLine ? `<div class="meta">${contactLine}</div>` : ""}
+  </div>`;
+}
+
+function buildTermDatesHtml(meta) {
+  if (!meta?.termEndDate && !meta?.nextTermBeginsDate) return "";
+  return `<div style="display:flex;gap:14px;margin-top:16px;">
+    <div style="flex:1;text-align:center;border:1px solid #DBE1DA;border-radius:6px;padding:8px;">
+      <div style="color:#5B6A64;font-size:8.5px;text-transform:uppercase;">Term Ends</div>
+      <div style="font-weight:700;color:#1F4B43;font-size:12px;">${esc(meta.termEndDate || "—")}</div>
+    </div>
+    <div style="flex:1;text-align:center;border:1px solid #DBE1DA;border-radius:6px;padding:8px;">
+      <div style="color:#5B6A64;font-size:8.5px;text-transform:uppercase;">Next Term Begins</div>
+      <div style="font-weight:700;color:#1F4B43;font-size:12px;">${esc(meta.nextTermBeginsDate || "—")}</div>
+    </div>
+  </div>`;
+}
+
 // ---------- Class report: whole class, ranked 1st to last ----------
-export function buildClassReportHtml({ schoolName, exam, className, subjects, rows, bands }) {
+export function buildClassReportHtml({ meta, exam, className, subjects, rows, bands }) {
   const sorted = sortByRank(rows);
   const legend = buildLegendHtml(bands);
   const headerCols = subjects.map((s) => `<th>${esc(s.code)}</th>`).join("");
@@ -84,10 +111,8 @@ export function buildClassReportHtml({ schoolName, exam, className, subjects, ro
 
   return `<html><head><meta charset="utf-8" /><style>${BASE_STYLE} body{padding:26px;}</style></head>
   <body>
-    <div style="text-align:center;">
-      <h1>${esc(schoolName || "School")}</h1>
-      <div class="meta">${esc(examLine(exam))} — ${esc(className)}</div>
-    </div>
+    ${buildSchoolHeaderHtml(meta)}
+    <div style="text-align:center;margin-bottom:6px;" class="meta">${esc(examLine(exam))} — ${esc(className)}</div>
     ${legend}
     <table>
       <thead><tr><th>Rank</th><th style="text-align:left;">Student</th>${headerCols}<th>Mean%</th><th>Mean Pts</th></tr></thead>
@@ -147,16 +172,18 @@ function computeClassAverages(subjects, rows) {
 }
 
 // ---------- Individual report cards, one page per learner, ranked 1st to last ----------
-export function buildStudentReportCardsHtml({ schoolName, exam, className, subjects, rows, bands }) {
+export function buildStudentReportCardsHtml({ meta, exam, className, subjects, rows, bands, classTeacherName, headTeacherName }) {
   const sorted = sortByRank(rows);
   const maxPoints = maxPointsOf(bands);
   const totalMax = subjects.length * 100;
   const pointsMax = subjects.length * maxPoints;
   const descriptorHtml = buildDescriptorTableHtml(bands);
   const classAverages = computeClassAverages(subjects, rows);
+  const schoolHeader = buildSchoolHeaderHtml(meta);
+  const termDates = buildTermDatesHtml(meta);
 
   const summaryBox = (label, value) => `
-    <div style="flex:1;border:1px solid #DBE1DA;border-radius:6px;padding:8px;text-align:center;">
+    <div style="flex:1;min-width:80px;border:1px solid #DBE1DA;border-radius:6px;padding:8px;text-align:center;">
       <div style="font-size:8.5px;color:#5B6A64;text-transform:uppercase;letter-spacing:0.3px;">${esc(label)}</div>
       <div style="font-size:13px;font-weight:700;color:#1F4B43;margin-top:2px;">${esc(value)}</div>
     </div>`;
@@ -181,22 +208,23 @@ export function buildStudentReportCardsHtml({ schoolName, exam, className, subje
 
       const overallBand = getBand(r.mean, bands);
       const chartSvg = buildComparisonChartSvg(subjects, r.subjScores, classAverages);
+      const classRemark = CLASS_TEACHER_REMARKS[overallBand?.short] || "";
+      const headRemark = HEAD_TEACHER_REMARKS[overallBand?.short] || "";
 
       return `<div style="page-break-after:always;padding:28px;">
-        <div style="border-bottom:3px solid #1F4B43;padding-bottom:8px;margin-bottom:14px;">
-          <h1>${esc(schoolName || "School")}</h1>
-          <div class="meta">${esc(examLine(exam))} — ${esc(className)} &middot; Academic Report</div>
-        </div>
+        ${schoolHeader}
+        <div class="meta" style="text-align:center;margin-bottom:14px;">${esc(examLine(exam))} — ${esc(className)} &middot; Academic Report</div>
 
         <h2 style="margin-top:0;">${esc(r.student.name)}</h2>
-        <div class="meta" style="margin-bottom:12px;">Assessment No. ${esc(r.student.admNo || "—")} &middot; ${esc(className)}</div>
+        <div class="meta" style="margin-bottom:12px;">ASS NO. ${esc(r.student.admNo || "—")} &middot; ${esc(className)}</div>
 
-        <div style="display:flex;gap:8px;margin-bottom:16px;">
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
           ${summaryBox("Performance Level", overallBand ? overallBand.short : "—")}
           ${summaryBox("Total Marks", `${r.total || 0}/${totalMax}`)}
           ${summaryBox("Total Points", `${r.totalPoints.toFixed(1)}/${pointsMax.toFixed(1)}`)}
           ${summaryBox("Mean Points", r.meanPoints !== null ? `${r.meanPoints.toFixed(2)}/${maxPoints.toFixed(1)}` : "—")}
-          ${summaryBox("Class Rank", `${r.rank} of ${sorted.length}`)}
+          ${summaryBox("Stream Rank", `${r.rank} of ${sorted.length}`)}
+          ${summaryBox("Grade Rank", r.gradeRank !== undefined ? `${r.gradeRank} of ${r.gradeTotal}` : "—")}
         </div>
 
         <div style="margin-bottom:14px;">
@@ -217,12 +245,18 @@ export function buildStudentReportCardsHtml({ schoolName, exam, className, subje
 
         <div style="display:flex;gap:14px;margin-top:20px;">
           <div style="flex:1;border:1px solid #DBE1DA;border-radius:6px;padding:12px;">
-            <div style="font-weight:700;font-size:10px;color:#1F4B43;margin-bottom:30px;">CLASS TEACHER REMARKS</div>
-            <div style="border-top:1px solid #DBE1DA;padding-top:6px;font-size:9.5px;color:#5B6A64;">Signature: ____________________</div>
+            <div style="font-weight:700;font-size:10px;color:#1F4B43;margin-bottom:6px;">CLASS TEACHER REMARKS</div>
+            <div style="font-size:10px;color:#1C2B27;margin-bottom:16px;">${esc(classRemark)}</div>
+            <div style="border-top:1px solid #DBE1DA;padding-top:6px;font-size:9.5px;color:#5B6A64;">
+              ${classTeacherName ? `${esc(classTeacherName)}<br/>` : ""}Signature: ____________________
+            </div>
           </div>
           <div style="flex:1;border:1px solid #DBE1DA;border-radius:6px;padding:12px;">
-            <div style="font-weight:700;font-size:10px;color:#1F4B43;margin-bottom:30px;">HEAD TEACHER REMARKS</div>
-            <div style="border-top:1px solid #DBE1DA;padding-top:6px;font-size:9.5px;color:#5B6A64;">Signature: ____________________</div>
+            <div style="font-weight:700;font-size:10px;color:#1F4B43;margin-bottom:6px;">HEAD TEACHER REMARKS</div>
+            <div style="font-size:10px;color:#1C2B27;margin-bottom:16px;">${esc(headRemark)}</div>
+            <div style="border-top:1px solid #DBE1DA;padding-top:6px;font-size:9.5px;color:#5B6A64;">
+              ${headTeacherName ? `${esc(headTeacherName)}<br/>` : ""}Signature: ____________________
+            </div>
           </div>
         </div>
 
@@ -230,6 +264,8 @@ export function buildStudentReportCardsHtml({ schoolName, exam, className, subje
           <div style="font-weight:700;font-size:10px;color:#1F4B43;margin-bottom:6px;">GRADE DESCRIPTORS</div>
           ${descriptorHtml}
         </div>
+
+        ${termDates}
       </div>`;
     })
     .join("");
@@ -275,7 +311,7 @@ function buildBarChartSvg(items, { maxVal, unit = "", colors = ["#1F4B43", "#D9A
 }
 
 // ---------- Cross-grade / cross-stream Analysis report ----------
-export function buildAnalysisReportHtml({ schoolName, exam, analysis, bands }) {
+export function buildAnalysisReportHtml({ meta, exam, analysis, bands }) {
   const maxPoints = maxPointsOf(bands);
 
   const gradeChart = buildBarChartSvg(
@@ -327,10 +363,8 @@ export function buildAnalysisReportHtml({ schoolName, exam, analysis, bands }) {
 
   return `<html><head><meta charset="utf-8" /><style>${BASE_STYLE} body{padding:26px;}</style></head>
   <body>
-    <div style="text-align:center;">
-      <h1>${esc(schoolName || "School")}</h1>
-      <div class="meta">${esc(examLine(exam))} &middot; Performance Analysis</div>
-    </div>
+    ${buildSchoolHeaderHtml(meta)}
+    <div class="meta" style="text-align:center;margin-bottom:6px;">${esc(examLine(exam))} &middot; Performance Analysis</div>
 
     <h2>Grade Ranking</h2>
     ${gradeChart}

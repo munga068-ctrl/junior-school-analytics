@@ -7,7 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { onAuthStateChanged } from "firebase/auth";
 
 import { auth } from "./firebaseConfig";
-import { listenClasses, listenSubjects, listenStudents, listenExams, listenBands, listenMeta } from "./utils/db";
+import { listenClasses, listenSubjects, listenStudents, listenExams, listenBands, listenMeta, listenTeachers, listenAdmins, ensureAdminBootstrap } from "./utils/db";
 import { DEFAULT_BANDS, COLORS } from "./utils/constants";
 
 import LoginScreen from "./screens/LoginScreen";
@@ -29,6 +29,8 @@ export default function App() {
   const [exams, setExams] = useState([]);
   const [bands, setBands] = useState(DEFAULT_BANDS);
   const [meta, setMeta] = useState({ schoolName: "" });
+  const [teachers, setTeachers] = useState([]);
+  const [adminEmails, setAdminEmails] = useState([]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -40,6 +42,7 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
+    ensureAdminBootstrap(user.email);
     const unsubs = [
       listenClasses(setClasses),
       listenSubjects(setSubjects),
@@ -47,9 +50,13 @@ export default function App() {
       listenExams(setExams),
       listenBands(setBands),
       listenMeta(setMeta),
+      listenTeachers(setTeachers),
+      listenAdmins(setAdminEmails),
     ];
     return () => unsubs.forEach((u) => u && u());
   }, [user]);
+
+  const isAdmin = !!user && adminEmails.includes(user.email);
 
   if (!authChecked) {
     return (
@@ -80,7 +87,7 @@ export default function App() {
             ),
           }}
         >
-          {() => <DashboardScreen classes={classes} subjects={subjects} students={students} exams={exams} meta={meta} />}
+          {() => <DashboardScreen classes={classes} subjects={subjects} students={students} exams={exams} meta={meta} isAdmin={isAdmin} adminEmails={adminEmails} currentEmail={user?.email} />}
         </Tab.Screen>
         <Tab.Screen
           name="Setup"
@@ -90,7 +97,7 @@ export default function App() {
             ),
           }}
         >
-          {() => <SetupScreen classes={classes} subjects={subjects} students={students} exams={exams} bands={bands} />}
+          {() => <SetupScreen classes={classes} subjects={subjects} students={students} exams={exams} bands={bands} teachers={teachers} isAdmin={isAdmin} />}
         </Tab.Screen>
         <Tab.Screen
           name="Score entry"
@@ -110,7 +117,7 @@ export default function App() {
             ),
           }}
         >
-          {() => <ReportsScreen classes={classes} subjects={subjects} students={students} exams={exams} bands={bands} schoolName={meta?.schoolName} />}
+          {() => <ReportsScreen classes={classes} subjects={subjects} students={students} exams={exams} bands={bands} meta={meta} teachers={teachers} />}
         </Tab.Screen>
         <Tab.Screen
           name="Analysis"
@@ -120,7 +127,7 @@ export default function App() {
             ),
           }}
         >
-          {() => <AnalysisScreen classes={classes} subjects={subjects} students={students} exams={exams} bands={bands} schoolName={meta?.schoolName} />}
+          {() => <AnalysisScreen classes={classes} subjects={subjects} students={students} exams={exams} bands={bands} meta={meta} />}
         </Tab.Screen>
       </Tab.Navigator>
     </NavigationContainer>

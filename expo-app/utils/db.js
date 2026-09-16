@@ -37,6 +37,40 @@ export function listenMeta(cb) {
   );
 }
 export const saveMeta = (data) => setDoc(doc(db, "settings", "meta"), data);
+
+export function listenTeachers(cb) {
+  return onSnapshot(collection(db, "teachers"), (snap) =>
+    cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+  );
+}
+export const addTeacher = (name, role, classId) =>
+  addDoc(collection(db, "teachers"), { name, role, classId: classId || null });
+export const removeTeacher = (id) => deleteDoc(doc(db, "teachers", id));
+
+// Admins are tracked as a plain list of emails in settings/admins.
+// The very first person to sign in (when this doc doesn't exist yet)
+// automatically becomes the first admin.
+export function listenAdmins(cb) {
+  return onSnapshot(doc(db, "settings", "admins"), (snap) =>
+    cb(snap.exists() ? snap.data().emails || [] : [])
+  );
+}
+export async function ensureAdminBootstrap(email) {
+  if (!email) return;
+  const ref = doc(db, "settings", "admins");
+  const snap = await getDoc(ref);
+  if (!snap.exists()) {
+    await setDoc(ref, { emails: [email] });
+  }
+}
+export const addAdminEmail = async (currentEmails, email) => {
+  const next = Array.from(new Set([...(currentEmails || []), email]));
+  await setDoc(doc(db, "settings", "admins"), { emails: next });
+};
+export const removeAdminEmail = async (currentEmails, email) => {
+  const next = (currentEmails || []).filter((e) => e !== email);
+  await setDoc(doc(db, "settings", "admins"), { emails: next });
+};
 export function listenExamScores(examId, cb) {
   if (!examId) return () => {};
   return onSnapshot(doc(db, "scores", examId), (snap) =>

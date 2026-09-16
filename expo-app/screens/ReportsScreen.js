@@ -3,9 +3,10 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { Picker } from "@react-native-picker/picker";
 import { COLORS, getBand, maxPointsOf } from "../utils/constants";
 import { listenExamScores } from "../utils/db";
+import { computeAnalysis, getGradeForClass } from "../utils/analysis";
 import { generateAndSharePdf, buildClassReportHtml, buildStudentReportCardsHtml } from "../utils/pdf";
 
-export default function ReportsScreen({ classes, subjects, students, exams, bands, schoolName }) {
+export default function ReportsScreen({ classes, subjects, students, exams, bands, meta, teachers }) {
   const [examId, setExamId] = useState("");
   const [classId, setClassId] = useState("");
   const [data, setData] = useState({});
@@ -61,7 +62,26 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
     if (rows.length === 0) return;
     setGenerating(kind);
     try {
-      const args = { schoolName, exam, className, subjects, rows, bands };
+      let finalRows = rows;
+      if (kind === "cards") {
+        // Grade-wide rank (across all streams in the grade), not just this class.
+        const analysis = computeAnalysis({ examScores: data, classes, students, subjects, bands });
+        const grade = getGradeForClass(classes.find((c) => c.id === classId));
+        const gradeSheet = analysis.gradeMarkSheets[grade] || [];
+        finalRows = rows.map((r) => {
+          const match = gradeSheet.find((g) => g.student.id === r.student.id);
+          return { ...r, gradeRank: match?.gradeRank ?? "—", gradeTotal: gradeSheet.length };
+        });
+      }
+
+      const classTeacher = teachers?.find((t) => t.role === "Class Teacher" && t.classId === classId);
+      const headTeacher = teachers?.find((t) => t.role === "Head Teacher");
+
+      const args = {
+        meta, exam, className, subjects, rows: finalRows, bands,
+        classTeacherName: classTeacher?.name || "",
+        headTeacherName: headTeacher?.name || "",
+      };
       const html = kind === "class" ? buildClassReportHtml(args) : buildStudentReportCardsHtml(args);
       await generateAndSharePdf(html, kind === "class" ? "Class report" : "Report cards");
     } catch (e) {

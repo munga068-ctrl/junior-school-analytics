@@ -23,7 +23,7 @@ function BarRow({ label, value, max, color }) {
   );
 }
 
-export default function AnalysisScreen({ classes, subjects, students, exams, bands, schoolName }) {
+export default function AnalysisScreen({ classes, subjects, students, exams, bands, meta }) {
   const [examId, setExamId] = useState("");
   const [data, setData] = useState({});
   const [generating, setGenerating] = useState(false);
@@ -46,7 +46,7 @@ export default function AnalysisScreen({ classes, subjects, students, exams, ban
     if (!analysis) return;
     setGenerating(true);
     try {
-      const html = buildAnalysisReportHtml({ schoolName, exam, analysis, bands });
+      const html = buildAnalysisReportHtml({ meta, exam, analysis, bands });
       await generateAndSharePdf(html, "Performance analysis");
     } catch (e) {
       Alert.alert("Couldn't generate PDF", e?.message || "Something went wrong. Try again.");

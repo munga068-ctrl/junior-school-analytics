@@ -5,14 +5,16 @@ import { COLORS } from "../utils/constants";
 import {
   addClass, removeClass, addSubject, removeSubject,
   addStudent, removeStudent, bulkAddStudents, addExam, removeExam, saveBands,
+  addTeacher, removeTeacher,
 } from "../utils/db";
 
-const TABS = ["Classes", "Subjects", "Students", "Exams", "Performance Levels"];
+const TABS = ["Classes", "Subjects", "Students", "Exams", "Performance Levels", "Teachers"];
 const GRADES = ["Grade 7", "Grade 8", "Grade 9"];
 const TERMS = ["1", "2", "3"];
+const TEACHER_ROLES = ["Class Teacher", "Subject Teacher", "Head Teacher"];
 const CURRENT_YEAR = new Date().getFullYear();
 
-export default function SetupScreen({ classes, subjects, students, exams, bands }) {
+export default function SetupScreen({ classes, subjects, students, exams, bands, teachers, isAdmin }) {
   const [tab, setTab] = useState("Classes");
   return (
     <View style={styles.container}>
@@ -28,6 +30,7 @@ export default function SetupScreen({ classes, subjects, students, exams, bands 
       {tab === "Students" && <StudentsTab classes={classes} students={students} />}
       {tab === "Exams" && <ExamsTab exams={exams} />}
       {tab === "Performance Levels" && <BandsTab bands={bands} />}
+      {tab === "Teachers" && <TeachersTab teachers={teachers} classes={classes} isAdmin={isAdmin} />}
     </View>
   );
 }
@@ -129,7 +132,7 @@ function StudentsTab({ classes, students }) {
         </Picker>
       </View>
       <TextInput
-        style={[styles.input, { height: 90, textAlignVertical: "top" }]}
+        style={[styles.input, { flex: 0, height: 90, textAlignVertical: "top" }]}
         placeholder={"Jane Wanjiru, 7210\nBrian Otieno, 7211"}
         multiline
         value={bulkText}
@@ -169,7 +172,12 @@ function ExamsTab({ exams }) {
   return (
     <View style={styles.section}>
       <Text style={styles.label}>Add an exam</Text>
-      <TextInput style={[styles.input, { marginBottom: 10 }]} placeholder="Exam name, e.g. Mid-Term Assessment" value={name} onChangeText={setName} />
+      <TextInput
+        style={[styles.input, { flex: 0, marginBottom: 10 }]}
+        placeholder="Exam name, e.g. Mid-Term Assessment"
+        value={name}
+        onChangeText={setName}
+      />
       <View style={styles.inputRow}>
         <View style={[styles.pickerWrap, { flex: 1 }]}>
           <Picker selectedValue={term} onValueChange={setTerm}>
@@ -201,7 +209,7 @@ function BandsTab({ bands }) {
   useEffect(() => { setLocal(bands); }, [bands]);
   return (
     <View style={styles.section}>
-      <Text style={styles.hintSmall}>Adjust score ranges and points to match your grading framework, then save.</Text>
+      <Text style={styles.hintSmall}>Adjust the raw marks range and points for each performance level, then save.</Text>
       {local.map((b, i) => (
         <View key={b.id} style={styles.bandRow}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 }}>
@@ -209,29 +217,29 @@ function BandsTab({ bands }) {
             <Text style={{ fontWeight: "700" }}>{b.short}</Text>
             <Text style={{ color: COLORS.inkSoft, fontSize: 12 }}>{b.label}</Text>
           </View>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
             <View>
-              <Text style={styles.miniLabel}>Min</Text>
-              <TextInput
-                style={[styles.input, { width: 64 }]}
-                keyboardType="numeric"
-                value={String(b.min)}
-                onChangeText={(v) => { const next = [...local]; next[i] = { ...b, min: Number(v) || 0 }; setLocal(next); }}
-              />
-            </View>
-            <View>
-              <Text style={styles.miniLabel}>Max</Text>
-              <TextInput
-                style={[styles.input, { width: 64 }]}
-                keyboardType="numeric"
-                value={String(b.max)}
-                onChangeText={(v) => { const next = [...local]; next[i] = { ...b, max: Number(v) || 0 }; setLocal(next); }}
-              />
+              <Text style={styles.miniLabel}>Raw Marks</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <TextInput
+                  style={[styles.input, { flex: 0, width: 54 }]}
+                  keyboardType="numeric"
+                  value={String(b.min)}
+                  onChangeText={(v) => { const next = [...local]; next[i] = { ...b, min: Number(v) || 0 }; setLocal(next); }}
+                />
+                <Text style={{ color: COLORS.inkSoft }}>-</Text>
+                <TextInput
+                  style={[styles.input, { flex: 0, width: 54 }]}
+                  keyboardType="numeric"
+                  value={String(b.max)}
+                  onChangeText={(v) => { const next = [...local]; next[i] = { ...b, max: Number(v) || 0 }; setLocal(next); }}
+                />
+              </View>
             </View>
             <View>
               <Text style={styles.miniLabel}>Points</Text>
               <TextInput
-                style={[styles.input, { width: 64 }]}
+                style={[styles.input, { flex: 0, width: 64 }]}
                 keyboardType="numeric"
                 value={String(b.points ?? 0)}
                 onChangeText={(v) => { const next = [...local]; next[i] = { ...b, points: Number(v) || 0 }; setLocal(next); }}
@@ -247,12 +255,67 @@ function BandsTab({ bands }) {
   );
 }
 
+function TeachersTab({ teachers, classes, isAdmin }) {
+  const [name, setName] = useState("");
+  const [role, setRole] = useState(TEACHER_ROLES[0]);
+  const [classId, setClassId] = useState("");
+
+  return (
+    <View style={styles.section}>
+      {!isAdmin && (
+        <Text style={styles.hintSmall}>Only an admin can add or remove teachers. You can still view the list below.</Text>
+      )}
+      {isAdmin && (
+        <>
+          <Text style={styles.label}>Add a teacher</Text>
+          <TextInput style={[styles.input, { flex: 0, marginBottom: 10 }]} placeholder="Full name" value={name} onChangeText={setName} />
+          <View style={styles.pickerWrap}>
+            <Picker selectedValue={role} onValueChange={(v) => { setRole(v); setClassId(""); }}>
+              {TEACHER_ROLES.map((r) => <Picker.Item key={r} label={r} value={r} />)}
+            </Picker>
+          </View>
+          {role === "Class Teacher" && (
+            <View style={styles.pickerWrap}>
+              <Picker selectedValue={classId} onValueChange={setClassId}>
+                <Picker.Item label="Select class" value="" />
+                {classes.map((c) => <Picker.Item key={c.id} label={c.name} value={c.id} />)}
+              </Picker>
+            </View>
+          )}
+          <TouchableOpacity
+            style={styles.addBtn}
+            onPress={() => {
+              if (!name.trim()) return;
+              addTeacher(name.trim(), role, role === "Class Teacher" ? classId : null);
+              setName(""); setClassId("");
+            }}
+          >
+            <Text style={styles.addBtnText}>Add teacher</Text>
+          </TouchableOpacity>
+        </>
+      )}
+      <Text style={[styles.label, { marginTop: 20 }]}>Teachers ({teachers.length})</Text>
+      <FlatList
+        data={teachers}
+        keyExtractor={(i) => i.id}
+        renderItem={({ item }) => (
+          <Row
+            left={`${item.name}  ·  ${item.role}${item.classId ? `  ·  ${classes.find((c) => c.id === item.classId)?.name || ""}` : ""}`}
+            onRemove={isAdmin ? () => removeTeacher(item.id) : undefined}
+          />
+        )}
+        ListEmptyComponent={<Text style={styles.empty}>No teachers added yet.</Text>}
+      />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg, padding: 14 },
   tabRow: { flexDirection: "row", flexWrap: "wrap", marginBottom: 12, borderBottomWidth: 1, borderColor: COLORS.border },
   tabBtn: { paddingVertical: 8, paddingHorizontal: 10 },
   tabBtnActive: { borderBottomWidth: 2, borderColor: COLORS.accent },
-  tabText: { color: COLORS.inkSoft, fontSize: 12.5 },
+  tabText: { color: COLORS.inkSoft, fontSize: 12 },
   tabTextActive: { color: COLORS.primary, fontWeight: "700" },
   section: { flex: 1 },
   label: { fontWeight: "700", color: COLORS.primary, marginBottom: 8, fontSize: 13.5 },

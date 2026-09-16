@@ -116,3 +116,19 @@ that anytime from the dashboard regardless of GitHub App status.
 
 
 <!-- Workflow test: confirming publish-update.yml triggers on push to main. -->
+
+## 9. Admin role & updated Firestore rules
+
+This update adds an admin-only Teachers directory and school-details section.
+Two things to do once:
+
+1. **Re-publish Firestore rules.** In the Firebase console, go to Firestore Database
+   > Rules, replace the contents with the updated `firestore.rules` from this repo,
+   and click Publish.
+2. **Nothing else to do for admin setup** — the first person who signs into the app
+   after this update automatically becomes the sole admin. From there, an admin can
+   manage the Teachers list and school details; everyone else sees those screens
+   read-only.
+
+Note: the school logo field takes an **image URL** (a link to an already-hosted
+image), not a file upload — there's no in-app upload flow yet.
