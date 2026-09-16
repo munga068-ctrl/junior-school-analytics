@@ -43,8 +43,8 @@ export function listenTeachers(cb) {
     cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
   );
 }
-export const addTeacher = (name, role, classId) =>
-  addDoc(collection(db, "teachers"), { name, role, classId: classId || null });
+export const addTeacher = (name, role, classId, subjectId) =>
+  addDoc(collection(db, "teachers"), { name, role, classId: classId || null, subjectId: subjectId || null });
 export const removeTeacher = (id) => deleteDoc(doc(db, "teachers", id));
 
 // Admins are tracked as a plain list of emails in settings/admins.

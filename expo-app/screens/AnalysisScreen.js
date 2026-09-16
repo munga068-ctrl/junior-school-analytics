@@ -117,30 +117,6 @@ export default function AnalysisScreen({ classes, subjects, students, exams, ban
                   </View>
                 ))}
               </View>
-
-              {analysis.gradesPresent.map((g) => (
-                <View key={g}>
-                  <Text style={styles.section}>{g} — general mark sheet</Text>
-                  <Text style={styles.hintSmall}>All streams combined, ranked 1st to last.</Text>
-                  <View style={styles.tableWrap}>
-                    <View style={styles.headerRow}>
-                      <Text style={[styles.th, { width: 34 }]}>Rank</Text>
-                      <Text style={[styles.th, { flex: 1.6, textAlign: "left" }]}>Student</Text>
-                      <Text style={[styles.th, { flex: 1, textAlign: "left" }]}>Stream</Text>
-                      <Text style={[styles.th, { width: 62, textAlign: "center" }]}>Mean Pts</Text>
-                    </View>
-                    {analysis.gradeMarkSheets[g].map((r) => (
-                      <View key={r.student.id} style={styles.dataRow}>
-                        <Text style={[styles.td, { width: 34, textAlign: "center", fontWeight: "700" }]}>{r.gradeRank}</Text>
-                        <Text style={[styles.td, { flex: 1.6, fontWeight: "600" }]} numberOfLines={1}>{r.student.name}</Text>
-                        <Text style={[styles.td, { flex: 1 }]} numberOfLines={1}>{r.classObj?.name || "—"}</Text>
-                        <Text style={[styles.td, { width: 62, textAlign: "center", fontWeight: "700" }]}>{r.meanPoints !== null ? r.meanPoints.toFixed(2) : "—"}</Text>
-                      </View>
-                    ))}
-                    {analysis.gradeMarkSheets[g].length === 0 && <Text style={[styles.hint, { padding: 10 }]}>No students with scores in this grade.</Text>}
-                  </View>
-                </View>
-              ))}
             </>
           )}
         </>

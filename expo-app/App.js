@@ -87,7 +87,7 @@ export default function App() {
             ),
           }}
         >
-          {() => <DashboardScreen classes={classes} subjects={subjects} students={students} exams={exams} meta={meta} isAdmin={isAdmin} adminEmails={adminEmails} currentEmail={user?.email} />}
+          {() => <DashboardScreen classes={classes} subjects={subjects} students={students} exams={exams} teachers={teachers} meta={meta} isAdmin={isAdmin} adminEmails={adminEmails} currentEmail={user?.email} />}
         </Tab.Screen>
         <Tab.Screen
           name="Setup"

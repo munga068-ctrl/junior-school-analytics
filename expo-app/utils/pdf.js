@@ -172,7 +172,7 @@ function computeClassAverages(subjects, rows) {
 }
 
 // ---------- Individual report cards, one page per learner, ranked 1st to last ----------
-export function buildStudentReportCardsHtml({ meta, exam, className, subjects, rows, bands, classTeacherName, headTeacherName }) {
+export function buildStudentReportCardsHtml({ meta, exam, className, subjects, rows, bands, classTeacherName, headTeacherName, subjectTeachers }) {
   const sorted = sortByRank(rows);
   const maxPoints = maxPointsOf(bands);
   const totalMax = subjects.length * 100;
@@ -201,6 +201,7 @@ export function buildStudentReportCardsHtml({ meta, exam, className, subjects, r
             <td style="text-align:center;"><span style="background:${chipBg};color:#1C2B27;font-weight:700;padding:3px 9px;border-radius:10px;display:inline-block;">${
               band ? esc(band.short) : "—"
             }</span></td>
+            <td style="font-size:10px;color:#5B6A64;">${esc(subjectTeachers?.[s.id] || "—")}</td>
             <td style="font-size:10px;color:#5B6A64;">${esc(AUTO_COMMENTS[band?.short] || "")}</td>
           </tr>`;
         })
@@ -239,7 +240,7 @@ export function buildStudentReportCardsHtml({ meta, exam, className, subjects, r
         </div>
 
         <table>
-          <thead><tr><th style="text-align:left;">Learning area</th><th>Marks</th><th>Level</th><th style="text-align:left;">Comment</th></tr></thead>
+          <thead><tr><th style="text-align:left;">Learning area</th><th>Marks</th><th>Level</th><th style="text-align:left;">Teacher</th><th style="text-align:left;">Comment</th></tr></thead>
           <tbody>${subjectRows}</tbody>
         </table>
 
@@ -338,29 +339,6 @@ export function buildAnalysisReportHtml({ meta, exam, analysis, bands }) {
     })
     .join("");
 
-  const markSheets = analysis.gradesPresent
-    .map((g) => {
-      const rows = analysis.gradeMarkSheets[g]
-        .map(
-          (r) => `<tr>
-            <td style="text-align:center;font-weight:700;">${r.gradeRank}</td>
-            <td style="text-align:left;font-weight:600;">${esc(r.student.name)}</td>
-            <td style="text-align:left;">${esc(r.classObj?.name || "—")}</td>
-            <td style="text-align:center;">${r.mean !== null ? r.mean.toFixed(1) : "—"}</td>
-            <td style="text-align:center;font-weight:700;">${r.meanPoints !== null ? r.meanPoints.toFixed(2) : "—"}</td>
-          </tr>`
-        )
-        .join("");
-      return `<div style="page-break-before:always;padding-top:26px;">
-        <h2>${esc(g)} — General Mark Sheet (all streams combined)</h2>
-        <table>
-          <thead><tr><th>Rank</th><th style="text-align:left;">Student</th><th style="text-align:left;">Stream</th><th>Mean%</th><th>Mean Pts</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>`;
-    })
-    .join("");
-
   return `<html><head><meta charset="utf-8" /><style>${BASE_STYLE} body{padding:26px;}</style></head>
   <body>
     ${buildSchoolHeaderHtml(meta)}
@@ -377,7 +355,30 @@ export function buildAnalysisReportHtml({ meta, exam, analysis, bands }) {
       <thead><tr><th style="text-align:left;">Subject</th>${subjTableHeader}</tr></thead>
       <tbody>${subjRows}</tbody>
     </table>
+  </body></html>`;
+}
 
-    ${markSheets}
+// ---------- Single-grade ranked mark sheet (Reports tab), all streams combined ----------
+export function buildGradeMarkSheetHtml({ meta, exam, grade, gradeRows }) {
+  const rows = gradeRows
+    .map(
+      (r) => `<tr>
+        <td style="text-align:center;font-weight:700;">${r.gradeRank}</td>
+        <td style="text-align:left;font-weight:600;">${esc(r.student.name)}</td>
+        <td style="text-align:left;">${esc(r.classObj?.name || "—")}</td>
+        <td style="text-align:center;">${r.mean !== null ? r.mean.toFixed(1) : "—"}</td>
+        <td style="text-align:center;font-weight:700;">${r.meanPoints !== null ? r.meanPoints.toFixed(2) : "—"}</td>
+      </tr>`
+    )
+    .join("");
+
+  return `<html><head><meta charset="utf-8" /><style>${BASE_STYLE} body{padding:26px;}</style></head>
+  <body>
+    ${buildSchoolHeaderHtml(meta)}
+    <div class="meta" style="text-align:center;margin-bottom:10px;">${esc(examLine(exam))} &middot; ${esc(grade)} — Ranked Mark Sheet (all streams combined)</div>
+    <table>
+      <thead><tr><th>Rank</th><th style="text-align:left;">Student</th><th style="text-align:left;">Stream</th><th>Mean%</th><th>Mean Pts</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
   </body></html>`;
 }

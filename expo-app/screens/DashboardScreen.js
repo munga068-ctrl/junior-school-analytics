@@ -15,15 +15,18 @@ const FIELDS = [
   { key: "nextTermBeginsDate", label: "Next term begins", placeholder: "e.g. 05-01-2027" },
 ];
 
-export default function DashboardScreen({ classes, subjects, students, exams, meta, isAdmin }) {
+export default function DashboardScreen({ classes, subjects, students, exams, teachers, meta, isAdmin }) {
   const [form, setForm] = useState(meta || {});
 
   useEffect(() => { setForm(meta || {}); }, [meta]);
+
+  const uniqueTeacherCount = new Set((teachers || []).map((t) => t.name.trim().toLowerCase())).size;
 
   const stats = [
     ["Classes", classes.length],
     ["Subjects", subjects.length],
     ["Students", students.length],
+    ["Teachers", uniqueTeacherCount],
     ["Exams", exams.length],
   ];
 

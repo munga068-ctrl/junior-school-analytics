@@ -30,7 +30,7 @@ export default function SetupScreen({ classes, subjects, students, exams, bands,
       {tab === "Students" && <StudentsTab classes={classes} students={students} />}
       {tab === "Exams" && <ExamsTab exams={exams} />}
       {tab === "Performance Levels" && <BandsTab bands={bands} />}
-      {tab === "Teachers" && <TeachersTab teachers={teachers} classes={classes} isAdmin={isAdmin} />}
+      {tab === "Teachers" && <TeachersTab teachers={teachers} classes={classes} subjects={subjects} isAdmin={isAdmin} />}
     </View>
   );
 }
@@ -255,10 +255,11 @@ function BandsTab({ bands }) {
   );
 }
 
-function TeachersTab({ teachers, classes, isAdmin }) {
+function TeachersTab({ teachers, classes, subjects, isAdmin }) {
   const [name, setName] = useState("");
   const [role, setRole] = useState(TEACHER_ROLES[0]);
   const [classId, setClassId] = useState("");
+  const [subjectId, setSubjectId] = useState("");
 
   return (
     <View style={styles.section}>
@@ -270,7 +271,7 @@ function TeachersTab({ teachers, classes, isAdmin }) {
           <Text style={styles.label}>Add a teacher</Text>
           <TextInput style={[styles.input, { flex: 0, marginBottom: 10 }]} placeholder="Full name" value={name} onChangeText={setName} />
           <View style={styles.pickerWrap}>
-            <Picker selectedValue={role} onValueChange={(v) => { setRole(v); setClassId(""); }}>
+            <Picker selectedValue={role} onValueChange={(v) => { setRole(v); setClassId(""); setSubjectId(""); }}>
               {TEACHER_ROLES.map((r) => <Picker.Item key={r} label={r} value={r} />)}
             </Picker>
           </View>
@@ -282,25 +283,44 @@ function TeachersTab({ teachers, classes, isAdmin }) {
               </Picker>
             </View>
           )}
+          {role === "Subject Teacher" && (
+            <View style={styles.pickerWrap}>
+              <Picker selectedValue={subjectId} onValueChange={setSubjectId}>
+                <Picker.Item label="Select subject" value="" />
+                {subjects.map((s) => <Picker.Item key={s.id} label={s.name} value={s.id} />)}
+              </Picker>
+            </View>
+          )}
           <TouchableOpacity
             style={styles.addBtn}
             onPress={() => {
               if (!name.trim()) return;
-              addTeacher(name.trim(), role, role === "Class Teacher" ? classId : null);
-              setName(""); setClassId("");
+              addTeacher(
+                name.trim(),
+                role,
+                role === "Class Teacher" ? classId : null,
+                role === "Subject Teacher" ? subjectId : null
+              );
+              setName(""); setClassId(""); setSubjectId("");
             }}
           >
             <Text style={styles.addBtnText}>Add teacher</Text>
           </TouchableOpacity>
         </>
       )}
-      <Text style={[styles.label, { marginTop: 20 }]}>Teachers ({teachers.length})</Text>
+      <Text style={[styles.label, { marginTop: 20 }]}>
+        Teachers ({new Set(teachers.map((t) => t.name.trim().toLowerCase())).size} people, {teachers.length} role{teachers.length === 1 ? "" : "s"})
+      </Text>
       <FlatList
         data={teachers}
         keyExtractor={(i) => i.id}
         renderItem={({ item }) => (
           <Row
-            left={`${item.name}  ·  ${item.role}${item.classId ? `  ·  ${classes.find((c) => c.id === item.classId)?.name || ""}` : ""}`}
+            left={`${item.name}  ·  ${item.role}${
+              item.classId ? `  ·  ${classes.find((c) => c.id === item.classId)?.name || ""}` : ""
+            }${
+              item.subjectId ? `  ·  ${subjects.find((s) => s.id === item.subjectId)?.name || ""}` : ""
+            }`}
             onRemove={isAdmin ? () => removeTeacher(item.id) : undefined}
           />
         )}

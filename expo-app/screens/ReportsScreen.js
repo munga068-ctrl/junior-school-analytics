@@ -4,13 +4,15 @@ import { Picker } from "@react-native-picker/picker";
 import { COLORS, getBand, maxPointsOf } from "../utils/constants";
 import { listenExamScores } from "../utils/db";
 import { computeAnalysis, getGradeForClass } from "../utils/analysis";
-import { generateAndSharePdf, buildClassReportHtml, buildStudentReportCardsHtml } from "../utils/pdf";
+import { generateAndSharePdf, buildClassReportHtml, buildStudentReportCardsHtml, buildGradeMarkSheetHtml } from "../utils/pdf";
 
 export default function ReportsScreen({ classes, subjects, students, exams, bands, meta, teachers }) {
   const [examId, setExamId] = useState("");
   const [classId, setClassId] = useState("");
+  const [gradeFilter, setGradeFilter] = useState("");
   const [data, setData] = useState({});
   const [generating, setGenerating] = useState("");
+  const [generatingGrade, setGeneratingGrade] = useState(false);
 
   useEffect(() => {
     if (!examId) return;
@@ -58,6 +60,11 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
 
   const CELL = 58;
 
+  const gradesAvailable = useMemo(
+    () => [...new Set(classes.map((c) => getGradeForClass(c)))].sort(),
+    [classes]
+  );
+
   const handleGenerate = async (kind) => {
     if (rows.length === 0) return;
     setGenerating(kind);
@@ -76,11 +83,17 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
 
       const classTeacher = teachers?.find((t) => t.role === "Class Teacher" && t.classId === classId);
       const headTeacher = teachers?.find((t) => t.role === "Head Teacher");
+      const subjectTeachers = {};
+      subjects.forEach((s) => {
+        const t = teachers?.find((t) => t.role === "Subject Teacher" && t.subjectId === s.id);
+        subjectTeachers[s.id] = t?.name || "";
+      });
 
       const args = {
         meta, exam, className, subjects, rows: finalRows, bands,
         classTeacherName: classTeacher?.name || "",
         headTeacherName: headTeacher?.name || "",
+        subjectTeachers,
       };
       const html = kind === "class" ? buildClassReportHtml(args) : buildStudentReportCardsHtml(args);
       await generateAndSharePdf(html, kind === "class" ? "Class report" : "Report cards");
@@ -88,6 +101,20 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
       Alert.alert("Couldn't generate PDF", e?.message || "Something went wrong. Try again.");
     }
     setGenerating("");
+  };
+
+  const handleGenerateGradeSheet = async () => {
+    if (!examId || !gradeFilter) return;
+    setGeneratingGrade(true);
+    try {
+      const analysis = computeAnalysis({ examScores: data, classes, students, subjects, bands });
+      const gradeRows = analysis.gradeMarkSheets[gradeFilter] || [];
+      const html = buildGradeMarkSheetHtml({ meta, exam, grade: gradeFilter, gradeRows });
+      await generateAndSharePdf(html, `${gradeFilter} ranked list`);
+    } catch (e) {
+      Alert.alert("Couldn't generate PDF", e?.message || "Something went wrong. Try again.");
+    }
+    setGeneratingGrade(false);
   };
 
   return (
@@ -98,6 +125,24 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
           {exams.map((e) => <Picker.Item key={e.id} label={`${e.name}${e.term ? ` — Term ${e.term}` : ""}${e.year ? ` ${e.year}` : ""}`} value={e.id} />)}
         </Picker>
       </View>
+
+      <Text style={styles.sectionLabel}>Grade-wide ranked list</Text>
+      <Text style={styles.hintSmall}>Ranks every student in one grade, across all its streams combined.</Text>
+      <View style={styles.pickerWrap}>
+        <Picker selectedValue={gradeFilter} onValueChange={setGradeFilter}>
+          <Picker.Item label="Select grade" value="" />
+          {gradesAvailable.map((g) => <Picker.Item key={g} label={g} value={g} />)}
+        </Picker>
+      </View>
+      <TouchableOpacity
+        style={[styles.pdfBtn, { marginBottom: 20 }, (!examId || !gradeFilter) && styles.pdfBtnDisabled]}
+        onPress={handleGenerateGradeSheet}
+        disabled={!examId || !gradeFilter || generatingGrade}
+      >
+        {generatingGrade ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.pdfBtnText}>Grade ranked list (PDF)</Text>}
+      </TouchableOpacity>
+
+      <Text style={styles.sectionLabel}>Class / stream report</Text>
       <View style={styles.pickerWrap}>
         <Picker selectedValue={classId} onValueChange={setClassId}>
           <Picker.Item label="Select class" value="" />
@@ -172,8 +217,11 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg, padding: 14 },
   pickerWrap: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 6, backgroundColor: "#fff", marginBottom: 10 },
   hint: { color: COLORS.inkSoft, fontSize: 13.5, marginTop: 10 },
+  sectionLabel: { fontSize: 13.5, fontWeight: "700", color: COLORS.primary, marginBottom: 4, marginTop: 4 },
+  hintSmall: { fontSize: 11.5, color: COLORS.inkSoft, marginBottom: 8 },
   pdfRow: { flexDirection: "row", gap: 10, marginBottom: 14 },
   pdfBtn: { flex: 1, backgroundColor: COLORS.primary, borderRadius: 6, paddingVertical: 11, alignItems: "center", justifyContent: "center" },
+  pdfBtnDisabled: { opacity: 0.5 },
   pdfBtnText: { color: "#fff", fontWeight: "700", fontSize: 12.5 },
   legend: { flexDirection: "row", flexWrap: "wrap", marginBottom: 10, rowGap: 8, columnGap: 12 },
   legendItem: { flexDirection: "row", alignItems: "center", marginBottom: 2 },
