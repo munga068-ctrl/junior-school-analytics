@@ -171,8 +171,9 @@ function computeClassAverages(subjects, rows) {
   return avg;
 }
 
-// ---------- Individual report cards, one page per learner, ranked 1st to last ----------
-export function buildStudentReportCardsHtml({ meta, exam, className, subjects, rows, bands, classTeacherName, headTeacherName, subjectTeachers }) {
+// ---------- Individual report cards: one page per learner, showing every
+// assessment recorded in the selected term plus an Average column ----------
+export function buildStudentReportCardsHtml({ meta, examsInTerm, termLabel, className, subjects, rows, bands, classTeacherName, headTeacherName, subjectTeachers }) {
   const sorted = sortByRank(rows);
   const maxPoints = maxPointsOf(bands);
   const totalMax = subjects.length * 100;
@@ -181,6 +182,7 @@ export function buildStudentReportCardsHtml({ meta, exam, className, subjects, r
   const classAverages = computeClassAverages(subjects, rows);
   const schoolHeader = buildSchoolHeaderHtml(meta);
   const termDates = buildTermDatesHtml(meta);
+  const examCols = examsInTerm.map((e) => `<th>${esc(e.name)}</th>`).join("");
 
   const summaryBox = (label, value) => `
     <div style="flex:1;min-width:80px;border:1px solid #DBE1DA;border-radius:6px;padding:8px;text-align:center;">
@@ -192,12 +194,19 @@ export function buildStudentReportCardsHtml({ meta, exam, className, subjects, r
     .map((r) => {
       const subjectRows = subjects
         .map((s) => {
-          const v = r.subjScores[s.id];
-          const band = getBand(v, bands);
+          const examCells = examsInTerm
+            .map((e) => {
+              const v = r.perExamScores?.[s.id]?.[e.id];
+              return `<td style="text-align:center;">${v === undefined || v === null ? "—" : v}</td>`;
+            })
+            .join("");
+          const avg = r.subjScores[s.id];
+          const band = getBand(avg, bands);
           const chipBg = band ? band.color + "40" : "#eee";
           return `<tr>
             <td>${esc(s.name)}</td>
-            <td style="text-align:center;">${v === undefined || v === null ? "—" : v + "%"}</td>
+            ${examCells}
+            <td style="text-align:center;font-weight:700;">${avg !== undefined && avg !== null ? avg.toFixed(1) : "—"}</td>
             <td style="text-align:center;"><span style="background:${chipBg};color:#1C2B27;font-weight:700;padding:3px 9px;border-radius:10px;display:inline-block;">${
               band ? esc(band.short) : "—"
             }</span></td>
@@ -214,7 +223,7 @@ export function buildStudentReportCardsHtml({ meta, exam, className, subjects, r
 
       return `<div style="page-break-after:always;padding:28px;">
         ${schoolHeader}
-        <div class="meta" style="text-align:center;margin-bottom:14px;">${esc(examLine(exam))} — ${esc(className)} &middot; Academic Report</div>
+        <div class="meta" style="text-align:center;margin-bottom:14px;">${esc(termLabel)} — ${esc(className)} &middot; Academic Report</div>
 
         <h2 style="margin-top:0;">${esc(r.student.name)}</h2>
         <div class="meta" style="margin-bottom:12px;">ASS NO. ${esc(r.student.admNo || "—")} &middot; ${esc(className)}</div>
@@ -230,7 +239,7 @@ export function buildStudentReportCardsHtml({ meta, exam, className, subjects, r
 
         <div style="margin-bottom:14px;">
           <div style="font-weight:700;font-size:10px;color:#1F4B43;margin-bottom:2px;">
-            SUBJECT PERFORMANCE — LEARNER vs CLASS AVERAGE
+            SUBJECT PERFORMANCE — LEARNER vs CLASS AVERAGE (term average)
           </div>
           <div style="font-size:9px;color:#5B6A64;margin-bottom:4px;">
             <span style="color:#1F4B43;">&#9632;</span> ${esc(r.student.name.split(" ")[0])}
@@ -240,7 +249,7 @@ export function buildStudentReportCardsHtml({ meta, exam, className, subjects, r
         </div>
 
         <table>
-          <thead><tr><th style="text-align:left;">Learning area</th><th>Marks</th><th>Level</th><th style="text-align:left;">Teacher</th><th style="text-align:left;">Comment</th></tr></thead>
+          <thead><tr><th style="text-align:left;">Learning area</th>${examCols}<th>Average</th><th>Level</th><th style="text-align:left;">Teacher</th><th style="text-align:left;">Comment</th></tr></thead>
           <tbody>${subjectRows}</tbody>
         </table>
 
@@ -358,12 +367,13 @@ export function buildAnalysisReportHtml({ meta, exam, analysis, bands }) {
   </body></html>`;
 }
 
-// ---------- Single-grade ranked mark sheet (Reports tab), all streams combined ----------
-export function buildGradeMarkSheetHtml({ meta, exam, grade, gradeRows }) {
-  const rows = gradeRows
+// ---------- Combined streams ranked list (Reports tab) — any chosen set of
+// streams for one specific exam, ranked together as one list ----------
+export function buildCombinedStreamsHtml({ meta, exam, label, rows }) {
+  const bodyRows = rows
     .map(
       (r) => `<tr>
-        <td style="text-align:center;font-weight:700;">${r.gradeRank}</td>
+        <td style="text-align:center;font-weight:700;">${r.combinedRank}</td>
         <td style="text-align:left;font-weight:600;">${esc(r.student.name)}</td>
         <td style="text-align:left;">${esc(r.classObj?.name || "—")}</td>
         <td style="text-align:center;">${r.mean !== null ? r.mean.toFixed(1) : "—"}</td>
@@ -375,10 +385,10 @@ export function buildGradeMarkSheetHtml({ meta, exam, grade, gradeRows }) {
   return `<html><head><meta charset="utf-8" /><style>${BASE_STYLE} body{padding:26px;}</style></head>
   <body>
     ${buildSchoolHeaderHtml(meta)}
-    <div class="meta" style="text-align:center;margin-bottom:10px;">${esc(examLine(exam))} &middot; ${esc(grade)} — Ranked Mark Sheet (all streams combined)</div>
+    <div class="meta" style="text-align:center;margin-bottom:10px;">${esc(examLine(exam))} &middot; ${esc(label)} — Combined Ranked List</div>
     <table>
       <thead><tr><th>Rank</th><th style="text-align:left;">Student</th><th style="text-align:left;">Stream</th><th>Mean%</th><th>Mean Pts</th></tr></thead>
-      <tbody>${rows}</tbody>
+      <tbody>${bodyRows}</tbody>
     </table>
   </body></html>`;
 }

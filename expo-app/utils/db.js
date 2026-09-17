@@ -43,8 +43,13 @@ export function listenTeachers(cb) {
     cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
   );
 }
-export const addTeacher = (name, role, classId, subjectId) =>
-  addDoc(collection(db, "teachers"), { name, role, classId: classId || null, subjectId: subjectId || null });
+export const addTeacher = (name, role, classId, subjectId, grade) =>
+  addDoc(collection(db, "teachers"), {
+    name, role,
+    classId: classId || null,
+    subjectId: subjectId || null,
+    grade: grade || null,
+  });
 export const removeTeacher = (id) => deleteDoc(doc(db, "teachers", id));
 
 // Admins are tracked as a plain list of emails in settings/admins.
@@ -98,3 +103,16 @@ export const removeExam = (id) => deleteDoc(doc(db, "exams", id));
 export const saveBands = (list) => setDoc(doc(db, "settings", "bands"), { list });
 
 export const saveExamScores = (examId, data) => setDoc(doc(db, "scores", examId), data);
+
+// One-time fetch of several exams' scores at once — used to build a whole
+// term's worth of assessments (report cards, term averages) without keeping
+// N live listeners open.
+export async function getScoresForExams(examIds) {
+  const entries = await Promise.all(
+    examIds.map(async (id) => {
+      const snap = await getDoc(doc(db, "scores", id));
+      return [id, snap.exists() ? snap.data() : {}];
+    })
+  );
+  return Object.fromEntries(entries);
+}

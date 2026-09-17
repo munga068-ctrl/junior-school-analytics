@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { Picker } from "@react-native-picker/picker";
 import { COLORS, getBand, maxPointsOf } from "../utils/constants";
 import { listenExamScores } from "../utils/db";
-import { computeAnalysis } from "../utils/analysis";
+import { computeAnalysis, getTermKey, getTermOptions } from "../utils/analysis";
 import { generateAndSharePdf, buildAnalysisReportHtml } from "../utils/pdf";
 
 const BAR_COLORS = ["#1F4B43", "#D9A441", "#6B8E23", "#C0392B", "#2E6B5E", "#8E5FB0"];
@@ -24,12 +24,18 @@ function BarRow({ label, value, max, color }) {
 }
 
 export default function AnalysisScreen({ classes, subjects, students, exams, bands, meta }) {
+  const [termKey, setTermKey] = useState("");
   const [examId, setExamId] = useState("");
   const [data, setData] = useState({});
   const [generating, setGenerating] = useState(false);
 
+  const termOptions = useMemo(() => getTermOptions(exams), [exams]);
+  const examsInTerm = useMemo(() => exams.filter((e) => getTermKey(e) === termKey), [exams, termKey]);
+
+  useEffect(() => { setExamId(""); }, [termKey]);
+
   useEffect(() => {
-    if (!examId) return;
+    if (!examId) { setData({}); return; }
     const unsub = listenExamScores(examId, setData);
     return unsub;
   }, [examId]);
@@ -57,19 +63,23 @@ export default function AnalysisScreen({ classes, subjects, students, exams, ban
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 14 }}>
       <View style={styles.pickerWrap}>
-        <Picker selectedValue={examId} onValueChange={setExamId}>
-          <Picker.Item label="Select exam" value="" />
-          {exams.map((e) => (
-            <Picker.Item
-              key={e.id}
-              label={`${e.name}${e.term ? ` — Term ${e.term}` : ""}${e.year ? ` ${e.year}` : ""}`}
-              value={e.id}
-            />
-          ))}
+        <Picker selectedValue={termKey} onValueChange={setTermKey}>
+          <Picker.Item label="Select term" value="" />
+          {termOptions.map((t) => <Picker.Item key={t.key} label={`Term ${t.term}, ${t.year}`} value={t.key} />)}
         </Picker>
       </View>
 
-      {!examId && <Text style={styles.hint}>Choose an exam to see rankings and comparisons across Grade 7, 8, and 9.</Text>}
+      {termKey && (
+        <View style={styles.pickerWrap}>
+          <Picker selectedValue={examId} onValueChange={setExamId}>
+            <Picker.Item label="Select exam" value="" />
+            {examsInTerm.map((e) => <Picker.Item key={e.id} label={e.name} value={e.id} />)}
+          </Picker>
+        </View>
+      )}
+
+      {!termKey && <Text style={styles.hint}>Choose a term, then an exam, to see rankings and comparisons across Grade 7, 8, and 9.</Text>}
+      {termKey && !examId && <Text style={styles.hint}>Choose an exam to see rankings and comparisons across Grade 7, 8, and 9.</Text>}
 
       {examId && analysis && (
         <>

@@ -87,3 +87,43 @@ export function computeAnalysis({ examScores, classes, students, subjects, bands
 
   return { rows, gradesPresent, gradeMarkSheets, gradeStats, streamStats, subjectByGrade };
 }
+
+// A "term" for selection purposes is a term+year combination, derived from
+// whatever exams already exist (e.g. "Term 2, 2026" covering CAT 1, CAT 2,
+// Mid-Term, End-Term — however many exams were recorded that term).
+export function getTermKey(exam) {
+  return `${exam?.term ?? ""}|${exam?.year ?? ""}`;
+}
+
+export function getTermOptions(exams) {
+  const map = new Map();
+  exams.forEach((e) => {
+    const key = getTermKey(e);
+    if (!map.has(key)) map.set(key, { key, term: e.term, year: e.year });
+  });
+  return Array.from(map.values()).sort((a, b) => (b.year || 0) - (a.year || 0) || (b.term || 0) - (a.term || 0));
+}
+
+// Averages every assessment within a term, per student per subject, so a
+// report card can show "all the assessments for that term" plus an average
+// column. scoresByExam is {examId: {studentId: {subjectId: score}}}.
+export function buildTermAverageScores(examIds, scoresByExam, students, subjects) {
+  const avgScores = {};
+  const perExamScores = {};
+  students.forEach((s) => {
+    avgScores[s.id] = {};
+    perExamScores[s.id] = {};
+    subjects.forEach((sub) => {
+      const perExam = {};
+      const vals = [];
+      examIds.forEach((examId) => {
+        const v = scoresByExam[examId]?.[s.id]?.[sub.id];
+        perExam[examId] = v === undefined ? null : v;
+        if (v !== undefined && v !== null) vals.push(Number(v));
+      });
+      perExamScores[s.id][sub.id] = perExam;
+      avgScores[s.id][sub.id] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : undefined;
+    });
+  });
+  return { avgScores, perExamScores };
+}

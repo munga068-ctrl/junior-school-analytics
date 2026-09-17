@@ -260,6 +260,7 @@ function TeachersTab({ teachers, classes, subjects, isAdmin }) {
   const [role, setRole] = useState(TEACHER_ROLES[0]);
   const [classId, setClassId] = useState("");
   const [subjectId, setSubjectId] = useState("");
+  const [subjectGrade, setSubjectGrade] = useState("");
 
   return (
     <View style={styles.section}>
@@ -271,7 +272,7 @@ function TeachersTab({ teachers, classes, subjects, isAdmin }) {
           <Text style={styles.label}>Add a teacher</Text>
           <TextInput style={[styles.input, { flex: 0, marginBottom: 10 }]} placeholder="Full name" value={name} onChangeText={setName} />
           <View style={styles.pickerWrap}>
-            <Picker selectedValue={role} onValueChange={(v) => { setRole(v); setClassId(""); setSubjectId(""); }}>
+            <Picker selectedValue={role} onValueChange={(v) => { setRole(v); setClassId(""); setSubjectId(""); setSubjectGrade(""); }}>
               {TEACHER_ROLES.map((r) => <Picker.Item key={r} label={r} value={r} />)}
             </Picker>
           </View>
@@ -284,12 +285,20 @@ function TeachersTab({ teachers, classes, subjects, isAdmin }) {
             </View>
           )}
           {role === "Subject Teacher" && (
-            <View style={styles.pickerWrap}>
-              <Picker selectedValue={subjectId} onValueChange={setSubjectId}>
-                <Picker.Item label="Select subject" value="" />
-                {subjects.map((s) => <Picker.Item key={s.id} label={s.name} value={s.id} />)}
-              </Picker>
-            </View>
+            <>
+              <View style={styles.pickerWrap}>
+                <Picker selectedValue={subjectId} onValueChange={setSubjectId}>
+                  <Picker.Item label="Select learning area" value="" />
+                  {subjects.map((s) => <Picker.Item key={s.id} label={s.name} value={s.id} />)}
+                </Picker>
+              </View>
+              <View style={styles.pickerWrap}>
+                <Picker selectedValue={subjectGrade} onValueChange={setSubjectGrade}>
+                  <Picker.Item label="Select grade they teach it in" value="" />
+                  {GRADES.map((g) => <Picker.Item key={g} label={g} value={g} />)}
+                </Picker>
+              </View>
+            </>
           )}
           <TouchableOpacity
             style={styles.addBtn}
@@ -299,9 +308,10 @@ function TeachersTab({ teachers, classes, subjects, isAdmin }) {
                 name.trim(),
                 role,
                 role === "Class Teacher" ? classId : null,
-                role === "Subject Teacher" ? subjectId : null
+                role === "Subject Teacher" ? subjectId : null,
+                role === "Subject Teacher" ? subjectGrade : null
               );
-              setName(""); setClassId(""); setSubjectId("");
+              setName(""); setClassId(""); setSubjectId(""); setSubjectGrade("");
             }}
           >
             <Text style={styles.addBtnText}>Add teacher</Text>
@@ -320,6 +330,8 @@ function TeachersTab({ teachers, classes, subjects, isAdmin }) {
               item.classId ? `  ·  ${classes.find((c) => c.id === item.classId)?.name || ""}` : ""
             }${
               item.subjectId ? `  ·  ${subjects.find((s) => s.id === item.subjectId)?.name || ""}` : ""
+            }${
+              item.grade ? `  ·  ${item.grade}` : ""
             }`}
             onRemove={isAdmin ? () => removeTeacher(item.id) : undefined}
           />
