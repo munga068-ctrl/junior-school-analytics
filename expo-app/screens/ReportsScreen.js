@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { Picker } from "@react-native-picker/picker";
 import { COLORS, getBand } from "../utils/constants";
 import { listenExamScores, getScoresForExams } from "../utils/db";
-import { computeAnalysis, getGradeForClass, getTermKey, getTermOptions, buildTermAverageScores } from "../utils/analysis";
+import { computeAnalysis, getGradeForClass, getTermKey, getTermOptions, buildTermAverageScores, getInitials } from "../utils/analysis";
 import { generateAndSharePdf, buildClassReportHtml, buildStudentReportCardsHtml, buildCombinedStreamsHtml } from "../utils/pdf";
 
 export default function ReportsScreen({ classes, subjects, students, exams, bands, meta, teachers }) {
@@ -72,13 +72,13 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
 
   const CELL = 58;
 
-  const buildSubjectTeachers = (grade) => {
+  const buildSubjectTeachers = (forClassId) => {
     const map = {};
     subjects.forEach((s) => {
       const t = teachers?.find(
-        (t) => t.role === "Subject Teacher" && t.subjectId === s.id && (!t.grade || t.grade === grade)
+        (t) => t.role === "Subject Teacher" && t.subjectId === s.id && t.classId === forClassId
       );
-      map[s.id] = t?.name || "";
+      map[s.id] = t?.name ? getInitials(t.name) : "";
     });
     return map;
   };
@@ -89,7 +89,7 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
     setGenerating("class");
     try {
       const html = buildClassReportHtml({ meta, exam, className, subjects, rows, bands });
-      await generateAndSharePdf(html, "Class report");
+      await generateAndSharePdf(html, "Class List");
     } catch (e) {
       Alert.alert("Couldn't generate PDF", e?.message || "Something went wrong. Try again.");
     }
@@ -140,7 +140,7 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
       const cardClassName = classes.find((c) => c.id === cardClassId)?.name || "";
       const classTeacher = teachers?.find((t) => t.role === "Class Teacher" && t.classId === cardClassId);
       const headTeacher = teachers?.find((t) => t.role === "Head Teacher");
-      const subjectTeachers = buildSubjectTeachers(grade);
+      const subjectTeachers = buildSubjectTeachers(cardClassId);
 
       const html = buildStudentReportCardsHtml({
         meta, examsInTerm, termLabel, className: cardClassName, subjects, rows: classRows, bands,
@@ -179,7 +179,7 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
         .filter(Boolean)
         .join(" & ");
 
-      const html = buildCombinedStreamsHtml({ meta, exam, label, rows: ranked });
+      const html = buildCombinedStreamsHtml({ meta, exam, label, subjects, bands, rows: ranked });
       await generateAndSharePdf(html, `${label} combined list`);
     } catch (e) {
       Alert.alert("Couldn't generate PDF", e?.message || "Something went wrong. Try again.");
@@ -228,7 +228,7 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
           </View>
 
           {/* ---------- Class / stream score sheet ---------- */}
-          <Text style={styles.sectionLabel}>Class / stream score sheet</Text>
+          <Text style={styles.sectionLabel}>Class List</Text>
           <View style={styles.pickerWrap}>
             <Picker selectedValue={classId} onValueChange={setClassId}>
               <Picker.Item label="Select class" value="" />
@@ -238,7 +238,7 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
 
           {examId && classId && rows.length > 0 && (
             <TouchableOpacity style={[styles.pdfBtn, { marginBottom: 14 }]} onPress={handleGenerateClassReport} disabled={!!generating}>
-              {generating === "class" ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.pdfBtnText}>Class report (PDF)</Text>}
+              {generating === "class" ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.pdfBtnText}>Class List (PDF)</Text>}
             </TouchableOpacity>
           )}
 

@@ -260,7 +260,6 @@ function TeachersTab({ teachers, classes, subjects, isAdmin }) {
   const [role, setRole] = useState(TEACHER_ROLES[0]);
   const [classId, setClassId] = useState("");
   const [subjectId, setSubjectId] = useState("");
-  const [subjectGrade, setSubjectGrade] = useState("");
 
   return (
     <View style={styles.section}>
@@ -272,7 +271,7 @@ function TeachersTab({ teachers, classes, subjects, isAdmin }) {
           <Text style={styles.label}>Add a teacher</Text>
           <TextInput style={[styles.input, { flex: 0, marginBottom: 10 }]} placeholder="Full name" value={name} onChangeText={setName} />
           <View style={styles.pickerWrap}>
-            <Picker selectedValue={role} onValueChange={(v) => { setRole(v); setClassId(""); setSubjectId(""); setSubjectGrade(""); }}>
+            <Picker selectedValue={role} onValueChange={(v) => { setRole(v); setClassId(""); setSubjectId(""); }}>
               {TEACHER_ROLES.map((r) => <Picker.Item key={r} label={r} value={r} />)}
             </Picker>
           </View>
@@ -293,9 +292,9 @@ function TeachersTab({ teachers, classes, subjects, isAdmin }) {
                 </Picker>
               </View>
               <View style={styles.pickerWrap}>
-                <Picker selectedValue={subjectGrade} onValueChange={setSubjectGrade}>
-                  <Picker.Item label="Select grade they teach it in" value="" />
-                  {GRADES.map((g) => <Picker.Item key={g} label={g} value={g} />)}
+                <Picker selectedValue={classId} onValueChange={setClassId}>
+                  <Picker.Item label="Select class / stream they teach it in" value="" />
+                  {classes.map((c) => <Picker.Item key={c.id} label={c.name} value={c.id} />)}
                 </Picker>
               </View>
             </>
@@ -307,11 +306,10 @@ function TeachersTab({ teachers, classes, subjects, isAdmin }) {
               addTeacher(
                 name.trim(),
                 role,
-                role === "Class Teacher" ? classId : null,
-                role === "Subject Teacher" ? subjectId : null,
-                role === "Subject Teacher" ? subjectGrade : null
+                role === "Class Teacher" || role === "Subject Teacher" ? classId : null,
+                role === "Subject Teacher" ? subjectId : null
               );
-              setName(""); setClassId(""); setSubjectId(""); setSubjectGrade("");
+              setName(""); setClassId(""); setSubjectId("");
             }}
           >
             <Text style={styles.addBtnText}>Add teacher</Text>
@@ -327,11 +325,9 @@ function TeachersTab({ teachers, classes, subjects, isAdmin }) {
         renderItem={({ item }) => (
           <Row
             left={`${item.name}  ·  ${item.role}${
-              item.classId ? `  ·  ${classes.find((c) => c.id === item.classId)?.name || ""}` : ""
-            }${
               item.subjectId ? `  ·  ${subjects.find((s) => s.id === item.subjectId)?.name || ""}` : ""
             }${
-              item.grade ? `  ·  ${item.grade}` : ""
+              item.classId ? `  ·  ${classes.find((c) => c.id === item.classId)?.name || ""}` : ""
             }`}
             onRemove={isAdmin ? () => removeTeacher(item.id) : undefined}
           />

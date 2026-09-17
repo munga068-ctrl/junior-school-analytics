@@ -85,7 +85,64 @@ export function computeAnalysis({ examScores, classes, students, subjects, bands
     return { subject: sub, perGrade };
   });
 
-  return { rows, gradesPresent, gradeMarkSheets, gradeStats, streamStats, subjectByGrade };
+  // Grade columns ordered best-performing first, for display.
+  const gradesPresentRanked = gradeStats.map((g) => g.grade);
+
+  // Overall mean % per subject, across every included student regardless of grade —
+  // used as the baseline for deviation-from-term comparisons.
+  const subjectOverallMean = {};
+  subjects.forEach((sub) => {
+    const vals = rows.map((r) => r.subjScores[sub.id]).filter((v) => v !== undefined && v !== null);
+    subjectOverallMean[sub.id] = vals.length ? vals.reduce((a, b) => a + Number(b), 0) / vals.length : null;
+  });
+
+  // How many learners land in each performance level, per subject.
+  const subjectLevelCounts = subjects.map((sub) => {
+    const counts = {};
+    bands.forEach((b) => { counts[b.short] = 0; });
+    rows.forEach((r) => {
+      const v = r.subjScores[sub.id];
+      if (v !== undefined && v !== null) {
+        const band = getBand(v, bands);
+        if (band) counts[band.short] = (counts[band.short] || 0) + 1;
+      }
+    });
+    return { subject: sub, counts };
+  });
+
+  // How many learners land in each performance level, per stream — ordered
+  // best-performing stream first (matches streamStats' ranking).
+  const streamLevelCounts = streamStats.map((s) => {
+    const counts = {};
+    bands.forEach((b) => { counts[b.short] = 0; });
+    rows
+      .filter((r) => r.classObj?.id === s.classId)
+      .forEach((r) => {
+        if (r.mean !== null) {
+          const band = getBand(r.mean, bands);
+          if (band) counts[band.short] = (counts[band.short] || 0) + 1;
+        }
+      });
+    return { classId: s.classId, className: s.className, rank: s.rank, counts };
+  });
+
+  return {
+    rows, gradesPresent, gradesPresentRanked, gradeMarkSheets, gradeStats, streamStats,
+    subjectByGrade, subjectOverallMean, subjectLevelCounts, streamLevelCounts,
+  };
+}
+
+// Short initials for a full name — "Jane Doe" -> "JD" — used where space is
+// tight (e.g. the per-subject Teacher column on report cards).
+export function getInitials(name) {
+  if (!name) return "";
+  return name
+    .trim()
+    .split(/\s+/)
+    .map((p) => p[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 3);
 }
 
 // A "term" for selection purposes is a term+year combination, derived from

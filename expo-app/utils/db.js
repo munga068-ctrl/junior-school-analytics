@@ -43,12 +43,11 @@ export function listenTeachers(cb) {
     cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
   );
 }
-export const addTeacher = (name, role, classId, subjectId, grade) =>
+export const addTeacher = (name, role, classId, subjectId) =>
   addDoc(collection(db, "teachers"), {
     name, role,
     classId: classId || null,
     subjectId: subjectId || null,
-    grade: grade || null,
   });
 export const removeTeacher = (id) => deleteDoc(doc(db, "teachers", id));
 

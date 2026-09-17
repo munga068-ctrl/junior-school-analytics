@@ -321,22 +321,26 @@ function buildBarChartSvg(items, { maxVal, unit = "", colors = ["#1F4B43", "#D9A
 }
 
 // ---------- Cross-grade / cross-stream Analysis report ----------
-export function buildAnalysisReportHtml({ meta, exam, analysis, bands }) {
+export function buildAnalysisReportHtml({ meta, exam, analysis, baseline, bands }) {
   const maxPoints = maxPointsOf(bands);
 
   const gradeChart = buildBarChartSvg(
-    analysis.gradeStats.map((g) => ({ label: `#${g.rank} ${g.grade}`, value: g.meanPoints })),
+    analysis.gradeStats.map((g) => ({ label: `${g.rank}  ${g.grade}`, value: g.meanPoints })),
     { maxVal: maxPoints, unit: " pts" }
   );
   const streamChart = buildBarChartSvg(
-    analysis.streamStats.map((s) => ({ label: `#${s.rank} ${s.className}`, value: s.meanPoints })),
+    analysis.streamStats.map((s) => ({ label: `${s.rank}  ${s.className}`, value: s.meanPoints })),
     { maxVal: maxPoints, unit: " pts" }
   );
 
-  const subjTableHeader = analysis.gradesPresent.map((g) => `<th>${esc(g)}</th>`).join("");
+  // Grade columns ordered best-performing first.
+  const gradeCols = analysis.gradesPresentRanked;
+  const subjTableHeader = gradeCols.map((g) => `<th>${esc(g)}</th>`).join("");
+  const levelCols = bands.map((b) => `<th>${esc(b.short)}</th>`).join("");
+
   const subjRows = analysis.subjectByGrade
     .map((row) => {
-      const cells = analysis.gradesPresent
+      const cells = gradeCols
         .map((g) => {
           const v = row.perGrade[g];
           const band = v !== null ? getBand(v, bands) : null;
@@ -344,7 +348,30 @@ export function buildAnalysisReportHtml({ meta, exam, analysis, bands }) {
           return `<td style="text-align:center;background:${bg};font-weight:${band ? 700 : 400};">${v !== null ? v.toFixed(1) : "—"}</td>`;
         })
         .join("");
-      return `<tr><td style="text-align:left;">${esc(row.subject.name)}</td>${cells}</tr>`;
+
+      const overall = analysis.subjectOverallMean[row.subject.id];
+      const base = baseline?.subjectOverallMean?.[row.subject.id];
+      const dev = overall !== null && overall !== undefined && base !== null && base !== undefined ? overall - base : null;
+      const devColor = dev === null ? "#5B6A64" : dev >= 0 ? "#1a9850" : "#d73027";
+      const devText = dev === null ? "—" : `${dev >= 0 ? "+" : ""}${dev.toFixed(1)}`;
+
+      const levelCounts = analysis.subjectLevelCounts.find((c) => c.subject.id === row.subject.id)?.counts || {};
+      const levelCells = bands.map((b) => `<td style="text-align:center;">${levelCounts[b.short] || 0}</td>`).join("");
+
+      return `<tr>
+        <td style="text-align:left;">${esc(row.subject.name)}</td>
+        ${cells}
+        <td style="text-align:center;font-weight:700;color:${devColor};">${devText}</td>
+        ${levelCells}
+      </tr>`;
+    })
+    .join("");
+
+  const streamCols = analysis.streamLevelCounts.map((s) => `<th>${esc(s.className)}</th>`).join("");
+  const streamLevelRows = bands
+    .map((b) => {
+      const cells = analysis.streamLevelCounts.map((s) => `<td style="text-align:center;">${s.counts[b.short] || 0}</td>`).join("");
+      return `<tr><td style="text-align:left;font-weight:600;">${esc(b.short)}</td>${cells}</tr>`;
     })
     .join("");
 
@@ -360,34 +387,59 @@ export function buildAnalysisReportHtml({ meta, exam, analysis, bands }) {
     ${streamChart}
 
     <h2>Subject Performance Across Grades</h2>
-    <table>
-      <thead><tr><th style="text-align:left;">Subject</th>${subjTableHeader}</tr></thead>
+    <div style="font-size:9px;color:#5B6A64;margin-bottom:6px;">Deviation compares this exam's subject mean to the average of other exams in the same term.</div>
+    <table style="font-size:9.5px;">
+      <thead><tr><th style="text-align:left;">Subject</th>${subjTableHeader}<th>Deviation</th>${levelCols}</tr></thead>
       <tbody>${subjRows}</tbody>
+    </table>
+
+    <h2>Performance Levels by Stream</h2>
+    <div style="font-size:9px;color:#5B6A64;margin-bottom:6px;">Streams ordered best-performing first. Counts are number of learners at each level.</div>
+    <table>
+      <thead><tr><th style="text-align:left;">Level</th>${streamCols}</tr></thead>
+      <tbody>${streamLevelRows}</tbody>
     </table>
   </body></html>`;
 }
 
 // ---------- Combined streams ranked list (Reports tab) — any chosen set of
 // streams for one specific exam, ranked together as one list ----------
-export function buildCombinedStreamsHtml({ meta, exam, label, rows }) {
+export function buildCombinedStreamsHtml({ meta, exam, label, subjects, bands, rows }) {
+  const legend = buildLegendHtml(bands);
+  const headerCols = subjects.map((s) => `<th>${esc(s.code)}</th>`).join("");
+
   const bodyRows = rows
-    .map(
-      (r) => `<tr>
+    .map((r) => {
+      const cells = subjects
+        .map((s) => {
+          const v = r.subjScores?.[s.id];
+          const band = getBand(v, bands);
+          const bg = band ? band.color + "33" : "#fff";
+          return `<td style="text-align:center;background:${bg};font-weight:${band ? 700 : 400};">${
+            v === undefined || v === null ? "—" : v
+          }</td>`;
+        })
+        .join("");
+      const overallBand = getBand(r.mean, bands);
+      return `<tr>
         <td style="text-align:center;font-weight:700;">${r.combinedRank}</td>
         <td style="text-align:left;font-weight:600;">${esc(r.student.name)}</td>
         <td style="text-align:left;">${esc(r.classObj?.name || "—")}</td>
+        ${cells}
         <td style="text-align:center;">${r.mean !== null ? r.mean.toFixed(1) : "—"}</td>
         <td style="text-align:center;font-weight:700;">${r.meanPoints !== null ? r.meanPoints.toFixed(2) : "—"}</td>
-      </tr>`
-    )
+        <td style="text-align:center;font-weight:700;">${overallBand ? esc(overallBand.short) : "—"}</td>
+      </tr>`;
+    })
     .join("");
 
   return `<html><head><meta charset="utf-8" /><style>${BASE_STYLE} body{padding:26px;}</style></head>
   <body>
     ${buildSchoolHeaderHtml(meta)}
-    <div class="meta" style="text-align:center;margin-bottom:10px;">${esc(examLine(exam))} &middot; ${esc(label)} — Combined Ranked List</div>
+    <div class="meta" style="text-align:center;margin-bottom:6px;">${esc(examLine(exam))} &middot; ${esc(label)} — Combined Ranked List</div>
+    ${legend}
     <table>
-      <thead><tr><th>Rank</th><th style="text-align:left;">Student</th><th style="text-align:left;">Stream</th><th>Mean%</th><th>Mean Pts</th></tr></thead>
+      <thead><tr><th>Rank</th><th style="text-align:left;">Student</th><th style="text-align:left;">Stream</th>${headerCols}<th>Mean%</th><th>Mean Pts</th><th>Level</th></tr></thead>
       <tbody>${bodyRows}</tbody>
     </table>
   </body></html>`;
