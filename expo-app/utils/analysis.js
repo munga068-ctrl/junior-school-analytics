@@ -160,6 +160,12 @@ export function getInitials(name) {
     .slice(0, 3);
 }
 
+// An exam with no grade set (or "All Grades") applies to every grade;
+// otherwise it only applies to the one grade it was created for.
+export function examAppliesToGrade(exam, grade) {
+  return !exam?.grade || exam.grade === "All Grades" || exam.grade === grade;
+}
+
 // A "term" for selection purposes is a term+year combination, derived from
 // whatever exams already exist (e.g. "Term 2, 2026" covering CAT 1, CAT 2,
 // Mid-Term, End-Term — however many exams were recorded that term).

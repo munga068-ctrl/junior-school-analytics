@@ -60,10 +60,14 @@ function buildSchoolHeaderHtml(meta) {
     .filter(Boolean)
     .map(esc)
     .join(" &middot; ");
-  return `<div style="text-align:center;border-bottom:3px solid #1F4B43;padding-bottom:10px;margin-bottom:14px;">
-    ${meta?.logoUrl ? `<img src="${esc(meta.logoUrl)}" style="height:48px;margin-bottom:6px;" />` : ""}
-    <h1>${esc(meta?.schoolName || "School")}</h1>
-    ${contactLine ? `<div class="meta">${contactLine}</div>` : ""}
+  const hasLogo = !!meta?.logoUrl;
+  return `<div style="display:flex;align-items:center;gap:12px;border-bottom:3px solid #1F4B43;padding-bottom:10px;margin-bottom:14px;">
+    ${hasLogo ? `<img src="${esc(meta.logoUrl)}" style="height:54px;width:54px;object-fit:contain;flex-shrink:0;" />` : ""}
+    <div style="flex:1;text-align:center;">
+      <h1>${esc(meta?.schoolName || "School")}</h1>
+      ${contactLine ? `<div class="meta">${contactLine}</div>` : ""}
+    </div>
+    ${hasLogo ? `<div style="width:54px;flex-shrink:0;"></div>` : ""}
   </div>`;
 }
 

@@ -116,7 +116,7 @@ export default function AnalysisScreen({ classes, subjects, students, exams, ban
         <View style={styles.pickerWrap}>
           <Picker selectedValue={examId} onValueChange={setExamId}>
             <Picker.Item label="Select exam" value="" />
-            {examsInTerm.map((e) => <Picker.Item key={e.id} label={e.name} value={e.id} />)}
+            {examsInTerm.map((e) => <Picker.Item key={e.id} label={`${e.name} (${e.grade || "All Grades"})`} value={e.id} />)}
           </Picker>
         </View>
       )}

@@ -96,7 +96,8 @@ export const bulkAddStudents = async (rows) => {
   await Promise.all(rows.map((r) => addDoc(collection(db, "students"), r)));
 };
 
-export const addExam = (name, term, year) => addDoc(collection(db, "exams"), { name, term, year });
+export const addExam = (name, term, year, grade) =>
+  addDoc(collection(db, "exams"), { name, term, year, grade: grade || null });
 export const removeExam = (id) => deleteDoc(doc(db, "exams", id));
 
 export const saveBands = (list) => setDoc(doc(db, "settings", "bands"), { list });

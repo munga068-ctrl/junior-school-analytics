@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { Picker } from "@react-native-picker/picker";
 import { COLORS, getBand } from "../utils/constants";
 import { listenExamScores, getScoresForExams } from "../utils/db";
-import { computeAnalysis, getGradeForClass, getTermKey, getTermOptions, buildTermAverageScores, getInitials } from "../utils/analysis";
+import { computeAnalysis, getGradeForClass, getTermKey, getTermOptions, buildTermAverageScores, getInitials, examAppliesToGrade } from "../utils/analysis";
 import { generateAndSharePdf, buildClassReportHtml, buildStudentReportCardsHtml, buildCombinedStreamsHtml } from "../utils/pdf";
 
 export default function ReportsScreen({ classes, subjects, students, exams, bands, meta, teachers }) {
@@ -19,6 +19,14 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
 
   const termOptions = useMemo(() => getTermOptions(exams), [exams]);
   const examsInTerm = useMemo(() => exams.filter((e) => getTermKey(e) === termKey), [exams, termKey]);
+  const cardClassGrade = useMemo(
+    () => (cardClassId ? getGradeForClass(classes.find((c) => c.id === cardClassId)) : ""),
+    [cardClassId, classes]
+  );
+  const examsForCardClass = useMemo(
+    () => examsInTerm.filter((e) => examAppliesToGrade(e, cardClassGrade)),
+    [examsInTerm, cardClassGrade]
+  );
   const termLabel = useMemo(() => {
     const t = termOptions.find((t) => t.key === termKey);
     return t ? `Term ${t.term}, ${t.year}` : "";
@@ -100,10 +108,10 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
 
   // ---------- Report cards: every assessment in the whole term + average ----------
   const handleGenerateReportCards = async () => {
-    if (!termKey || !cardClassId || examsInTerm.length === 0) return;
+    if (!termKey || !cardClassId || examsForCardClass.length === 0) return;
     setGeneratingCards(true);
     try {
-      const examIds = examsInTerm.map((e) => e.id);
+      const examIds = examsForCardClass.map((e) => e.id);
       const scoresByExam = await getScoresForExams(examIds);
       const { avgScores, perExamScores } = buildTermAverageScores(examIds, scoresByExam, students, subjects);
 
@@ -145,7 +153,7 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
       const subjectTeachers = buildSubjectTeachers(cardClassId);
 
       const html = buildStudentReportCardsHtml({
-        meta, examsInTerm, termLabel, className: cardClassName, subjects, rows: classRows, bands,
+        meta, examsInTerm: examsForCardClass, termLabel, className: cardClassName, subjects, rows: classRows, bands,
         classTeacherName: classTeacher?.name || "",
         headTeacherName: headTeacher?.name || "",
         subjectTeachers,
@@ -213,19 +221,23 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
             </Picker>
           </View>
           <TouchableOpacity
-            style={[styles.pdfBtn, { marginBottom: 22 }, (!cardClassId || examsInTerm.length === 0) && styles.pdfBtnDisabled]}
+            style={[styles.pdfBtn, { marginBottom: 6 }, (!cardClassId || examsForCardClass.length === 0) && styles.pdfBtnDisabled]}
             onPress={handleGenerateReportCards}
-            disabled={!cardClassId || examsInTerm.length === 0 || generatingCards}
+            disabled={!cardClassId || examsForCardClass.length === 0 || generatingCards}
           >
             {generatingCards ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.pdfBtnText}>Report cards (PDF)</Text>}
           </TouchableOpacity>
+          {cardClassId && examsForCardClass.length === 0 && (
+            <Text style={[styles.hintSmall, { marginBottom: 16 }]}>No exams found for {cardClassGrade} in this term yet — add one in Setup → Exams.</Text>
+          )}
+          {(!cardClassId || examsForCardClass.length > 0) && <View style={{ marginBottom: 16 }} />}
 
           {/* ---------- Exam picker shared by the two exam-specific sections below ---------- */}
           <Text style={styles.sectionLabel}>Exam (for the reports below)</Text>
           <View style={styles.pickerWrap}>
             <Picker selectedValue={examId} onValueChange={setExamId}>
               <Picker.Item label="Select exam" value="" />
-              {examsInTerm.map((e) => <Picker.Item key={e.id} label={e.name} value={e.id} />)}
+              {examsInTerm.map((e) => <Picker.Item key={e.id} label={`${e.name} (${e.grade || "All Grades"})`} value={e.id} />)}
             </Picker>
           </View>
 

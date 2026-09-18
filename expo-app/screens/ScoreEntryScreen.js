@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import { COLORS } from "../utils/constants";
 import { listenExamScores, saveExamScores } from "../utils/db";
+import { getGradeForClass, examAppliesToGrade } from "../utils/analysis";
 
 export default function ScoreEntryScreen({ classes, subjects, students, exams }) {
   const [examId, setExamId] = useState("");
@@ -13,6 +14,24 @@ export default function ScoreEntryScreen({ classes, subjects, students, exams })
   const [saved, setSaved] = useState(false);
 
   const classStudents = students.filter((s) => s.classId === classId);
+  const selectedClass = classes.find((c) => c.id === classId);
+  const classGrade = selectedClass ? getGradeForClass(selectedClass) : "";
+
+  // Only exams that actually apply to this class's grade (or apply to
+  // every grade) make sense to pick here.
+  const examsForClass = useMemo(
+    () => (classId ? exams.filter((e) => examAppliesToGrade(e, classGrade)) : exams),
+    [exams, classId, classGrade]
+  );
+
+  // If the class changes and the previously chosen exam no longer applies
+  // to it, clear the exam selection rather than silently keeping a mismatch.
+  useEffect(() => {
+    if (examId && classId && !examsForClass.some((e) => e.id === examId)) {
+      setExamId("");
+    }
+    // eslint-disable-next-line
+  }, [classId]);
 
   useEffect(() => {
     if (!examId) return;
@@ -41,15 +60,15 @@ export default function ScoreEntryScreen({ classes, subjects, students, exams })
   return (
     <View style={styles.container}>
       <View style={styles.pickerWrap}>
-        <Picker selectedValue={examId} onValueChange={setExamId}>
-          <Picker.Item label="Select exam" value="" />
-          {exams.map((e) => <Picker.Item key={e.id} label={`${e.name}${e.term ? ` — Term ${e.term}` : ""}${e.year ? ` ${e.year}` : ""}`} value={e.id} />)}
-        </Picker>
-      </View>
-      <View style={styles.pickerWrap}>
         <Picker selectedValue={classId} onValueChange={setClassId}>
           <Picker.Item label="Select class" value="" />
           {classes.map((c) => <Picker.Item key={c.id} label={c.name} value={c.id} />)}
+        </Picker>
+      </View>
+      <View style={styles.pickerWrap}>
+        <Picker selectedValue={examId} onValueChange={setExamId}>
+          <Picker.Item label="Select exam" value="" />
+          {examsForClass.map((e) => <Picker.Item key={e.id} label={`${e.name}${e.term ? ` — Term ${e.term}` : ""}${e.year ? ` ${e.year}` : ""}`} value={e.id} />)}
         </Picker>
       </View>
       <View style={styles.pickerWrap}>

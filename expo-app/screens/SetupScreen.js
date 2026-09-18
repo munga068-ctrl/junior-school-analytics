@@ -169,6 +169,7 @@ function ExamsTab({ exams }) {
   const [name, setName] = useState("");
   const [term, setTerm] = useState(TERMS[0]);
   const [year, setYear] = useState(String(CURRENT_YEAR));
+  const [grade, setGrade] = useState("All Grades");
   return (
     <View style={styles.section}>
       <Text style={styles.label}>Add an exam</Text>
@@ -186,9 +187,16 @@ function ExamsTab({ exams }) {
         </View>
         <TextInput style={[styles.input, { flex: 1 }]} placeholder="Year" keyboardType="numeric" value={year} onChangeText={setYear} />
       </View>
+      <Text style={styles.miniLabel}>Which grade is this exam for?</Text>
+      <View style={styles.pickerWrap}>
+        <Picker selectedValue={grade} onValueChange={setGrade}>
+          <Picker.Item label="All Grades" value="All Grades" />
+          {GRADES.map((g) => <Picker.Item key={g} label={g} value={g} />)}
+        </Picker>
+      </View>
       <TouchableOpacity
         style={styles.addBtn}
-        onPress={() => { if (name.trim()) { addExam(name.trim(), term, Number(year) || CURRENT_YEAR); setName(""); } }}
+        onPress={() => { if (name.trim()) { addExam(name.trim(), term, Number(year) || CURRENT_YEAR, grade); setName(""); } }}
       >
         <Text style={styles.addBtnText}>Add exam</Text>
       </TouchableOpacity>
@@ -196,7 +204,10 @@ function ExamsTab({ exams }) {
         data={exams}
         keyExtractor={(i) => i.id}
         renderItem={({ item }) => (
-          <Row left={`${item.name}${item.term ? `  ·  Term ${item.term}` : ""}${item.year ? `  ·  ${item.year}` : ""}`} onRemove={() => removeExam(item.id)} />
+          <Row
+            left={`${item.name}${item.term ? `  ·  Term ${item.term}` : ""}${item.year ? `  ·  ${item.year}` : ""}  ·  ${item.grade || "All Grades"}`}
+            onRemove={() => removeExam(item.id)}
+          />
         )}
         ListEmptyComponent={<Text style={styles.empty}>No exams yet.</Text>}
       />
