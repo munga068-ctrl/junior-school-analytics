@@ -1,13 +1,25 @@
 import { getBand } from "./constants";
 
-// Classes created via the new Setup UI carry an explicit `grade` field.
-// Older classes (created before this feature) fall back to parsing the
-// grade out of their free-text name, e.g. "Grade 7 Green" -> "Grade 7".
+// Classes created via the Setup UI carry an explicit `grade` field. Older
+// classes, or ones without it, fall back to reading the first standalone
+// 7/8/9 digit out of the free-text name — matches "Grade 7 Green", "7 Green",
+// "7Green", "Stream 9B", etc. without requiring the literal word "Grade".
 export function getGradeForClass(cls) {
   if (cls?.grade) return cls.grade;
-  const m = /grade\s*(7|8|9)/i.exec(cls?.name || "");
-  if (m) return `Grade ${m[1]}`;
+  const m = /\d+/.exec(cls?.name || "");
+  if (m && ["7", "8", "9"].includes(m[0])) return `Grade ${m[0]}`;
   return "Other";
+}
+
+// Short "7Y" style label for a class — grade number + first letter of the
+// stream name — used where table columns are too tight for a full name.
+export function getStreamInitials(cls) {
+  if (!cls) return "";
+  const grade = getGradeForClass(cls);
+  const gradeNum = (grade.match(/\d+/) || [])[0] || "";
+  const streamPart = (cls.name || "").replace(/grade/i, "").replace(/\d+/, "").trim();
+  const streamInitial = streamPart ? streamPart[0].toUpperCase() : "";
+  return gradeNum ? `${gradeNum}${streamInitial}` : cls.name || "";
 }
 
 // Computes everything the Analysis screen and its PDF need for one exam,
@@ -30,8 +42,11 @@ export function computeAnalysis({ examScores, classes, students, subjects, bands
           totalPoints += band ? band.points || 0 : 0;
         }
       });
-      const mean = count ? total / count : null;
-      const meanPoints = count ? totalPoints / count : null;
+      // Mean is total marks divided by the full number of learning areas,
+      // regardless of any subject missing a score — a missing subject
+      // dilutes the average rather than being excluded from it.
+      const mean = count ? total / subjects.length : null;
+      const meanPoints = count ? totalPoints / subjects.length : null;
       return { student: s, classObj, grade, subjScores, total, mean, meanPoints, totalPoints, count };
     })
     .filter((r) => r.count > 0);
@@ -66,7 +81,7 @@ export function computeAnalysis({ examScores, classes, students, subjects, bands
       const clsRows = rows.filter((r) => r.classObj?.id === cls.id);
       const vals = clsRows.map((r) => r.meanPoints).filter((v) => v !== null);
       const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
-      return { classId: cls.id, className: cls.name, grade: getGradeForClass(cls), meanPoints: avg, studentCount: clsRows.length };
+      return { classId: cls.id, className: cls.name, initials: getStreamInitials(cls), grade: getGradeForClass(cls), meanPoints: avg, studentCount: clsRows.length };
     })
     .filter((s) => s.studentCount > 0)
     .sort((a, b) => b.meanPoints - a.meanPoints);
@@ -123,7 +138,7 @@ export function computeAnalysis({ examScores, classes, students, subjects, bands
           if (band) counts[band.short] = (counts[band.short] || 0) + 1;
         }
       });
-    return { classId: s.classId, className: s.className, rank: s.rank, counts };
+    return { classId: s.classId, className: s.className, initials: s.initials, rank: s.rank, counts };
   });
 
   return {

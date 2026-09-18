@@ -53,8 +53,10 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
           totalPoints += band ? band.points || 0 : 0;
         }
       });
-      const mean = count ? total / count : null;
-      const meanPoints = count ? totalPoints / count : null;
+      // Mean is total marks divided by the full number of learning areas,
+      // regardless of any subject missing a score.
+      const mean = count ? total / subjects.length : null;
+      const meanPoints = count ? totalPoints / subjects.length : null;
       return { student: s, subjScores, total, mean, totalPoints, meanPoints, count };
     });
 
@@ -258,6 +260,7 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
                     <Text style={[styles.th, { width: 32 }]}>Rank</Text>
                     <Text style={[styles.th, { width: 130 }]}>Student</Text>
                     {subjects.map((s) => <Text key={s.id} style={[styles.th, { width: CELL, textAlign: "center" }]}>{s.code}</Text>)}
+                    <Text style={[styles.th, { width: CELL, textAlign: "center" }]}>Total</Text>
                     <Text style={[styles.th, { width: CELL, textAlign: "center" }]}>Mean%</Text>
                     <Text style={[styles.th, { width: CELL, textAlign: "center" }]}>Mean Pts</Text>
                   </View>
@@ -278,6 +281,7 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
                             </Text>
                           );
                         })}
+                        <Text style={[styles.td, { width: CELL, textAlign: "center", fontWeight: "700" }]}>{r.total || 0}</Text>
                         <Text style={[styles.td, { width: CELL, textAlign: "center", fontWeight: "700" }]}>{r.mean !== null ? r.mean.toFixed(1) : "—"}</Text>
                         <Text style={[styles.td, { width: CELL, textAlign: "center", fontWeight: "700" }]}>{r.meanPoints !== null ? r.meanPoints.toFixed(2) : "—"}</Text>
                       </View>

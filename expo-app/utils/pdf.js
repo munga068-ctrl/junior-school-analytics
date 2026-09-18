@@ -103,6 +103,7 @@ export function buildClassReportHtml({ meta, exam, className, subjects, rows, ba
         <td style="text-align:center;font-weight:700;">${r.rank}</td>
         <td style="text-align:left;font-weight:600;">${esc(r.student.name)}</td>
         ${cells}
+        <td style="text-align:center;font-weight:700;">${r.total || 0}</td>
         <td style="text-align:center;">${r.mean !== null ? r.mean.toFixed(1) : "—"}</td>
         <td style="text-align:center;font-weight:700;">${r.meanPoints !== null ? r.meanPoints.toFixed(2) : "—"}</td>
       </tr>`;
@@ -115,7 +116,7 @@ export function buildClassReportHtml({ meta, exam, className, subjects, rows, ba
     <div style="text-align:center;margin-bottom:6px;" class="meta">${esc(examLine(exam))} — ${esc(className)}</div>
     ${legend}
     <table>
-      <thead><tr><th>Rank</th><th style="text-align:left;">Student</th>${headerCols}<th>Mean%</th><th>Mean Pts</th></tr></thead>
+      <thead><tr><th>Rank</th><th style="text-align:left;">Student</th>${headerCols}<th>Total</th><th>Mean%</th><th>Mean Pts</th></tr></thead>
       <tbody>${bodyRows}</tbody>
     </table>
   </body></html>`;
@@ -367,7 +368,7 @@ export function buildAnalysisReportHtml({ meta, exam, analysis, baseline, bands 
     })
     .join("");
 
-  const streamCols = analysis.streamLevelCounts.map((s) => `<th>${esc(s.className)}</th>`).join("");
+  const streamCols = analysis.streamLevelCounts.map((s) => `<th>${esc(s.initials || s.className)}</th>`).join("");
   const streamLevelRows = bands
     .map((b) => {
       const cells = analysis.streamLevelCounts.map((s) => `<td style="text-align:center;">${s.counts[b.short] || 0}</td>`).join("");
@@ -426,6 +427,7 @@ export function buildCombinedStreamsHtml({ meta, exam, label, subjects, bands, r
         <td style="text-align:left;font-weight:600;">${esc(r.student.name)}</td>
         <td style="text-align:left;">${esc(r.classObj?.name || "—")}</td>
         ${cells}
+        <td style="text-align:center;font-weight:700;">${r.total || 0}</td>
         <td style="text-align:center;">${r.mean !== null ? r.mean.toFixed(1) : "—"}</td>
         <td style="text-align:center;font-weight:700;">${r.meanPoints !== null ? r.meanPoints.toFixed(2) : "—"}</td>
         <td style="text-align:center;font-weight:700;">${overallBand ? esc(overallBand.short) : "—"}</td>
@@ -439,7 +441,7 @@ export function buildCombinedStreamsHtml({ meta, exam, label, subjects, bands, r
     <div class="meta" style="text-align:center;margin-bottom:6px;">${esc(examLine(exam))} &middot; ${esc(label)} — Combined Ranked List</div>
     ${legend}
     <table>
-      <thead><tr><th>Rank</th><th style="text-align:left;">Student</th><th style="text-align:left;">Stream</th>${headerCols}<th>Mean%</th><th>Mean Pts</th><th>Level</th></tr></thead>
+      <thead><tr><th>Rank</th><th style="text-align:left;">Student</th><th style="text-align:left;">Stream</th>${headerCols}<th>Total</th><th>Mean%</th><th>Mean Pts</th><th>Level</th></tr></thead>
       <tbody>${bodyRows}</tbody>
     </table>
   </body></html>`;

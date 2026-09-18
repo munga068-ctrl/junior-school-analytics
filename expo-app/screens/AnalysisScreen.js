@@ -9,7 +9,6 @@ import {
 import { generateAndSharePdf, buildAnalysisReportHtml } from "../utils/pdf";
 
 const BAR_COLORS = ["#1F4B43", "#D9A441", "#6B8E23", "#C0392B", "#2E6B5E", "#8E5FB0"];
-const GRADES = ["Grade 7", "Grade 8", "Grade 9"];
 
 function BarRow({ label, value, max, color }) {
   const pct = max > 0 ? Math.max(3, (value / max) * 100) : 0;
@@ -49,7 +48,7 @@ export default function AnalysisScreen({ classes, subjects, students, exams, ban
   const maxPoints = maxPointsOf(bands);
 
   const gradesAvailable = useMemo(
-    () => [...new Set(classes.map((c) => getGradeForClass(c)))].filter((g) => GRADES.includes(g)).sort(),
+    () => [...new Set(classes.map((c) => getGradeForClass(c)))].sort(),
     [classes]
   );
   const effectiveGrades = selectedGrades.length ? selectedGrades : gradesAvailable;
@@ -215,7 +214,7 @@ export default function AnalysisScreen({ classes, subjects, students, exams, ban
                   <View style={styles.headerRow}>
                     <Text style={[styles.th, { width: 60, textAlign: "left" }]}>Level</Text>
                     {analysis.streamLevelCounts.map((s) => (
-                      <Text key={s.classId} style={[styles.th, { width: 70, textAlign: "center" }]} numberOfLines={1}>{s.className}</Text>
+                      <Text key={s.classId} style={[styles.th, { width: 70, textAlign: "center" }]} numberOfLines={1}>{s.initials || s.className}</Text>
                     ))}
                   </View>
                   {bands.map((b) => (
