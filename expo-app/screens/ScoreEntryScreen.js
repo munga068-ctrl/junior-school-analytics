@@ -13,7 +13,7 @@ export default function ScoreEntryScreen({ classes, subjects, students, exams })
   const [local, setLocal] = useState({});
   const [saved, setSaved] = useState(false);
 
-  const classStudents = students.filter((s) => s.classId === classId);
+  const classStudents = students.filter((s) => s.classId === classId && !s.graduated);
   const selectedClass = classes.find((c) => c.id === classId);
   const classGrade = selectedClass ? getGradeForClass(selectedClass) : "";
 

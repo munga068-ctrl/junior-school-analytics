@@ -1,5 +1,5 @@
 import {
-  collection, doc, getDocs, getDoc, setDoc, addDoc, deleteDoc, onSnapshot,
+  collection, doc, getDocs, getDoc, setDoc, addDoc, deleteDoc, updateDoc, onSnapshot,
 } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 import { DEFAULT_SUBJECTS, DEFAULT_BANDS } from "./constants";
@@ -115,4 +115,14 @@ export async function getScoresForExams(examIds) {
     })
   );
   return Object.fromEntries(entries);
+}
+
+// Applies a year-end promotion plan: moves each student to their next-grade
+// class, and flags Grade 9 students as graduated. Scores and report history
+// are untouched — only each student's current classId/graduated status changes.
+export async function applyPromotions(moves, graduates) {
+  await Promise.all([
+    ...moves.map((m) => updateDoc(doc(db, "students", m.student.id), { classId: m.toClass.id })),
+    ...graduates.map((g) => updateDoc(doc(db, "students", g.student.id), { graduated: true })),
+  ]);
 }

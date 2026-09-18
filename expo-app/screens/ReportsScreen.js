@@ -41,7 +41,7 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
     return unsub;
   }, [examId]);
 
-  const classStudents = students.filter((s) => s.classId === classId);
+  const classStudents = students.filter((s) => s.classId === classId && !s.graduated);
   const exam = exams.find((e) => e.id === examId);
   const className = classes.find((c) => c.id === classId)?.name || "";
 

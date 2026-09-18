@@ -25,7 +25,7 @@ export default function DashboardScreen({ classes, subjects, students, exams, te
   const stats = [
     ["Classes", classes.length],
     ["Subjects", subjects.length],
-    ["Students", students.length],
+    ["Students", students.filter((s) => !s.graduated).length],
     ["Teachers", uniqueTeacherCount],
     ["Exams", exams.length],
   ];

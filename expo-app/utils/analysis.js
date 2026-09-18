@@ -11,15 +11,54 @@ export function getGradeForClass(cls) {
   return "Other";
 }
 
+// The stream name alone, with the grade word/number stripped out —
+// "Grade 7 Green" -> "Green", "9 Yellow" -> "Yellow".
+export function getStreamPart(cls) {
+  return (cls?.name || "").replace(/grade/i, "").replace(/\d+/, "").trim();
+}
+
 // Short "7Y" style label for a class — grade number + first letter of the
 // stream name — used where table columns are too tight for a full name.
 export function getStreamInitials(cls) {
   if (!cls) return "";
   const grade = getGradeForClass(cls);
   const gradeNum = (grade.match(/\d+/) || [])[0] || "";
-  const streamPart = (cls.name || "").replace(/grade/i, "").replace(/\d+/, "").trim();
+  const streamPart = getStreamPart(cls);
   const streamInitial = streamPart ? streamPart[0].toUpperCase() : "";
   return gradeNum ? `${gradeNum}${streamInitial}` : cls.name || "";
+}
+
+// Plans a year-end promotion: every active Grade 7 learner moves to the
+// Grade 8 class with the same stream name, Grade 8 -> Grade 9, and Grade 9
+// learners graduate (flagged, not deleted, so history stays intact).
+// Streams that don't yet have a matching next-grade class are left in
+// `unresolved` so the admin can create it before promoting.
+export function buildPromotionPlan(classes, students) {
+  const activeStudents = students.filter((s) => !s.graduated);
+  const findTargetClass = (grade, streamPart) =>
+    classes.find(
+      (c) => getGradeForClass(c) === grade && getStreamPart(c).toLowerCase() === streamPart.toLowerCase()
+    );
+
+  const moves = [];
+  const graduates = [];
+  const unresolved = [];
+
+  activeStudents.forEach((s) => {
+    const cls = classes.find((c) => c.id === s.classId);
+    const grade = getGradeForClass(cls);
+    if (grade === "Grade 7" || grade === "Grade 8") {
+      const targetGrade = grade === "Grade 7" ? "Grade 8" : "Grade 9";
+      const target = findTargetClass(targetGrade, getStreamPart(cls));
+      if (target) moves.push({ student: s, fromClass: cls, toClass: target });
+      else unresolved.push({ student: s, fromClass: cls, targetGrade });
+    } else if (grade === "Grade 9") {
+      graduates.push({ student: s, fromClass: cls });
+    }
+    // Classes with an unrecognized grade are left alone — not part of the cycle.
+  });
+
+  return { moves, graduates, unresolved };
 }
 
 // Computes everything the Analysis screen and its PDF need for one exam,
@@ -27,6 +66,7 @@ export function getStreamInitials(cls) {
 // the Reports tab.
 export function computeAnalysis({ examScores, classes, students, subjects, bands }) {
   const rows = students
+    .filter((s) => !s.graduated)
     .map((s) => {
       const classObj = classes.find((c) => c.id === s.classId);
       const grade = getGradeForClass(classObj);

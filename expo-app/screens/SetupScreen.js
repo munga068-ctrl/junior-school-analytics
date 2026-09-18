@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList, Alert } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import { COLORS } from "../utils/constants";
 import {
   addClass, removeClass, addSubject, removeSubject,
   addStudent, removeStudent, bulkAddStudents, addExam, removeExam, saveBands,
-  addTeacher, removeTeacher,
+  addTeacher, removeTeacher, applyPromotions,
 } from "../utils/db";
+import { buildPromotionPlan } from "../utils/analysis";
 
-const TABS = ["Classes", "Subjects", "Students", "Exams", "Performance Levels", "Teachers"];
+const TABS = ["Classes", "Subjects", "Students", "Exams", "Performance Levels", "Teachers", "Promotion"];
 const GRADES = ["Grade 7", "Grade 8", "Grade 9"];
 const TERMS = ["1", "2", "3"];
 const TEACHER_ROLES = ["Class Teacher", "Subject Teacher", "Head Teacher"];
@@ -31,6 +32,7 @@ export default function SetupScreen({ classes, subjects, students, exams, bands,
       {tab === "Exams" && <ExamsTab exams={exams} />}
       {tab === "Performance Levels" && <BandsTab bands={bands} />}
       {tab === "Teachers" && <TeachersTab teachers={teachers} classes={classes} subjects={subjects} isAdmin={isAdmin} />}
+      {tab === "Promotion" && <PromotionTab classes={classes} students={students} isAdmin={isAdmin} />}
     </View>
   );
 }
@@ -71,7 +73,7 @@ function ClassesTab({ classes, students }) {
         data={classes}
         keyExtractor={(i) => i.id}
         renderItem={({ item }) => (
-          <Row left={`${item.name}  ·  ${students.filter((s) => s.classId === item.id).length} students`} onRemove={() => removeClass(item.id)} />
+          <Row left={`${item.name}  ·  ${students.filter((s) => s.classId === item.id && !s.graduated).length} students`} onRemove={() => removeClass(item.id)} />
         )}
         ListEmptyComponent={<Text style={styles.empty}>No classes yet.</Text>}
       />
@@ -153,12 +155,12 @@ function StudentsTab({ classes, students }) {
         <Text style={styles.addBtnText}>Add all</Text>
       </TouchableOpacity>
 
-      <Text style={[styles.label, { marginTop: 20 }]}>Roster ({students.length})</Text>
+      <Text style={[styles.label, { marginTop: 20 }]}>Roster ({students.filter((s) => !s.graduated).length} active, {students.filter((s) => s.graduated).length} graduated)</Text>
       <FlatList
         data={students}
         keyExtractor={(i) => i.id}
         renderItem={({ item }) => (
-          <Row left={`${item.name}  ·  ${item.admNo || "—"}  ·  ${classes.find((c) => c.id === item.classId)?.name || "—"}`} onRemove={() => removeStudent(item.id)} />
+          <Row left={`${item.name}  ·  ${item.admNo || "—"}  ·  ${classes.find((c) => c.id === item.classId)?.name || "—"}${item.graduated ? "  ·  Graduated" : ""}`} onRemove={() => removeStudent(item.id)} />
         )}
       />
     </View>
@@ -345,6 +347,95 @@ function TeachersTab({ teachers, classes, subjects, isAdmin }) {
         )}
         ListEmptyComponent={<Text style={styles.empty}>No teachers added yet.</Text>}
       />
+    </View>
+  );
+}
+
+function PromotionTab({ classes, students, isAdmin }) {
+  const [plan, setPlan] = useState(null);
+  const [applying, setApplying] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const activeCount = students.filter((s) => !s.graduated).length;
+
+  const preview = () => {
+    setPlan(buildPromotionPlan(classes, students));
+    setDone(false);
+  };
+
+  const confirm = async () => {
+    if (!plan) return;
+    setApplying(true);
+    try {
+      await applyPromotions(plan.moves, plan.graduates);
+      setPlan(null);
+      setDone(true);
+    } catch (e) {
+      Alert.alert("Couldn't promote learners", e?.message || "Something went wrong. Try again.");
+    }
+    setApplying(false);
+  };
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.label}>Year-end promotion</Text>
+      <Text style={styles.hintSmall}>
+        Moves every active Grade 7 learner to the matching Grade 8 stream, Grade 8 to Grade 9, and
+        marks Grade 9 learners as graduated — removed from active rosters, but kept in history so
+        past reports still work. Currently {activeCount} active learner{activeCount === 1 ? "" : "s"}.
+      </Text>
+
+      {!isAdmin && <Text style={styles.hintSmall}>Only an admin can run this.</Text>}
+
+      {isAdmin && !plan && !done && (
+        <TouchableOpacity style={styles.addBtn} onPress={preview}>
+          <Text style={styles.addBtnText}>Preview promotion</Text>
+        </TouchableOpacity>
+      )}
+
+      {isAdmin && plan && (
+        <View>
+          <Text style={styles.rowText}>{plan.moves.length} learner(s) will move up a grade.</Text>
+          <Text style={styles.rowText}>{plan.graduates.length} Grade 9 learner(s) will graduate.</Text>
+
+          {plan.unresolved.length > 0 && (
+            <>
+              <Text style={[styles.rowText, { color: "#C0392B", fontWeight: "700", marginTop: 10 }]}>
+                {plan.unresolved.length} learner(s) can't be moved yet — no matching class exists:
+              </Text>
+              {plan.unresolved.slice(0, 12).map((u) => (
+                <Text key={u.student.id} style={styles.hintSmall}>
+                  {u.student.name} ({u.fromClass?.name || "—"}) needs a {u.targetGrade} class in the same stream
+                </Text>
+              ))}
+              <Text style={styles.hintSmall}>Create the missing class(es) in the Classes tab, then preview again.</Text>
+            </>
+          )}
+
+          {plan.moves.length === 0 && plan.graduates.length === 0 && (
+            <Text style={styles.hintSmall}>Nothing to promote right now.</Text>
+          )}
+
+          <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
+            <TouchableOpacity
+              style={[styles.addBtn, { flex: 1 }, (plan.moves.length === 0 && plan.graduates.length === 0) && { opacity: 0.5 }]}
+              onPress={confirm}
+              disabled={applying || (plan.moves.length === 0 && plan.graduates.length === 0)}
+            >
+              <Text style={styles.addBtnText}>{applying ? "Promoting…" : "Confirm & promote"}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.addBtn, { flex: 1, backgroundColor: "#fff", borderWidth: 1, borderColor: COLORS.border }]}
+              onPress={() => setPlan(null)}
+              disabled={applying}
+            >
+              <Text style={[styles.addBtnText, { color: COLORS.ink }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {done && <Text style={[styles.rowText, { color: COLORS.primary, fontWeight: "700" }]}>Promotion complete.</Text>}
     </View>
   );
 }
