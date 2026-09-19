@@ -127,8 +127,27 @@ export function computeAnalysis({ examScores, classes, students, subjects, bands
     .sort((a, b) => b.meanPoints - a.meanPoints);
   streamStats.forEach((s, i) => { s.rank = i + 1; });
 
+  // Overall mean % per subject, across every included student regardless of grade —
+  // used as the baseline for deviation-from-term comparisons and to rank subjects.
+  const subjectOverallMean = {};
+  subjects.forEach((sub) => {
+    const vals = rows.map((r) => r.subjScores[sub.id]).filter((v) => v !== undefined && v !== null);
+    subjectOverallMean[sub.id] = vals.length ? vals.reduce((a, b) => a + Number(b), 0) / vals.length : null;
+  });
+
+  // Subjects ordered best-performing first — used everywhere a subject list
+  // is displayed, so results read top-to-bottom by strength.
+  const subjectsRanked = [...subjects].sort((a, b) => {
+    const av = subjectOverallMean[a.id];
+    const bv = subjectOverallMean[b.id];
+    if (av === null && bv === null) return 0;
+    if (av === null) return 1;
+    if (bv === null) return -1;
+    return bv - av;
+  });
+
   // Per-subject mean %, broken out by grade.
-  const subjectByGrade = subjects.map((sub) => {
+  const subjectByGrade = subjectsRanked.map((sub) => {
     const perGrade = {};
     gradesPresent.forEach((g) => {
       const vals = rows
@@ -143,16 +162,8 @@ export function computeAnalysis({ examScores, classes, students, subjects, bands
   // Grade columns ordered best-performing first, for display.
   const gradesPresentRanked = gradeStats.map((g) => g.grade);
 
-  // Overall mean % per subject, across every included student regardless of grade —
-  // used as the baseline for deviation-from-term comparisons.
-  const subjectOverallMean = {};
-  subjects.forEach((sub) => {
-    const vals = rows.map((r) => r.subjScores[sub.id]).filter((v) => v !== undefined && v !== null);
-    subjectOverallMean[sub.id] = vals.length ? vals.reduce((a, b) => a + Number(b), 0) / vals.length : null;
-  });
-
-  // How many learners land in each performance level, per subject.
-  const subjectLevelCounts = subjects.map((sub) => {
+  // How many learners land in each performance level, per subject (ranked order).
+  const subjectLevelCounts = subjectsRanked.map((sub) => {
     const counts = {};
     bands.forEach((b) => { counts[b.short] = 0; });
     rows.forEach((r) => {
@@ -181,9 +192,54 @@ export function computeAnalysis({ examScores, classes, students, subjects, bands
     return { classId: s.classId, className: s.className, initials: s.initials, rank: s.rank, counts };
   });
 
+  // ---------- Gender breakdown (Boys vs Girls) ----------
+  const GENDERS = [
+    { code: "M", label: "Boys" },
+    { code: "F", label: "Girls" },
+  ];
+
+  // Overall mean % per gender.
+  const genderStats = GENDERS.map((g) => {
+    const genderRows = rows.filter((r) => r.student.gender === g.code);
+    const vals = genderRows.map((r) => r.mean).filter((v) => v !== null);
+    const meanPercent = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    const pointVals = genderRows.map((r) => r.meanPoints).filter((v) => v !== null);
+    const meanPoints = pointVals.length ? pointVals.reduce((a, b) => a + b, 0) / pointVals.length : null;
+    return { gender: g.code, label: g.label, meanPercent, meanPoints, studentCount: genderRows.length };
+  });
+
+  // Per-subject mean %, broken out by gender (same ranked subject order).
+  const subjectByGender = subjectsRanked.map((sub) => {
+    const perGender = {};
+    GENDERS.forEach((g) => {
+      const vals = rows
+        .filter((r) => r.student.gender === g.code)
+        .map((r) => r.subjScores[sub.id])
+        .filter((v) => v !== undefined && v !== null);
+      perGender[g.code] = vals.length ? vals.reduce((a, b) => a + Number(b), 0) / vals.length : null;
+    });
+    return { subject: sub, perGender };
+  });
+
+  // How many boys/girls land in each overall performance level.
+  const genderLevelCounts = GENDERS.map((g) => {
+    const counts = {};
+    bands.forEach((b) => { counts[b.short] = 0; });
+    rows
+      .filter((r) => r.student.gender === g.code)
+      .forEach((r) => {
+        if (r.mean !== null) {
+          const band = getBand(r.mean, bands);
+          if (band) counts[band.short] = (counts[band.short] || 0) + 1;
+        }
+      });
+    return { gender: g.code, label: g.label, counts };
+  });
+
   return {
     rows, gradesPresent, gradesPresentRanked, gradeMarkSheets, gradeStats, streamStats,
-    subjectByGrade, subjectOverallMean, subjectLevelCounts, streamLevelCounts,
+    subjectsRanked, subjectByGrade, subjectOverallMean, subjectLevelCounts, streamLevelCounts,
+    genderStats, subjectByGender, genderLevelCounts,
   };
 }
 

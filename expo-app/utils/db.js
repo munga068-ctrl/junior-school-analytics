@@ -89,8 +89,8 @@ export const removeClass = (id) => deleteDoc(doc(db, "classes", id));
 export const addSubject = (name, code) => addDoc(collection(db, "subjects"), { name, code });
 export const removeSubject = (id) => deleteDoc(doc(db, "subjects", id));
 
-export const addStudent = (name, assessmentNo, classId) =>
-  addDoc(collection(db, "students"), { name, admNo: assessmentNo, classId });
+export const addStudent = (name, assessmentNo, classId, gender) =>
+  addDoc(collection(db, "students"), { name, admNo: assessmentNo, classId, gender: gender || null });
 export const removeStudent = (id) => deleteDoc(doc(db, "students", id));
 export const bulkAddStudents = async (rows) => {
   await Promise.all(rows.map((r) => addDoc(collection(db, "students"), r)));

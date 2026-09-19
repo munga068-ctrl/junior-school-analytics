@@ -106,6 +106,7 @@ function StudentsTab({ classes, students }) {
   const [name, setName] = useState("");
   const [assessmentNo, setAssessmentNo] = useState("");
   const [classId, setClassId] = useState("");
+  const [gender, setGender] = useState("");
   const [bulkClassId, setBulkClassId] = useState("");
   const [bulkText, setBulkText] = useState("");
 
@@ -122,11 +123,31 @@ function StudentsTab({ classes, students }) {
           {classes.map((c) => <Picker.Item key={c.id} label={c.name} value={c.id} />)}
         </Picker>
       </View>
-      <TouchableOpacity style={styles.addBtn} onPress={() => { if (name.trim() && classId) { addStudent(name.trim(), assessmentNo.trim(), classId); setName(""); setAssessmentNo(""); } }}>
+      <View style={styles.genderRow}>
+        {[["M", "Male"], ["F", "Female"]].map(([val, label]) => (
+          <TouchableOpacity
+            key={val}
+            style={[styles.genderChip, gender === val && styles.genderChipActive]}
+            onPress={() => setGender(gender === val ? "" : val)}
+          >
+            <Text style={[styles.genderChipText, gender === val && styles.genderChipTextActive]}>{label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <TouchableOpacity
+        style={styles.addBtn}
+        onPress={() => {
+          if (name.trim() && classId) {
+            addStudent(name.trim(), assessmentNo.trim(), classId, gender);
+            setName(""); setAssessmentNo(""); setGender("");
+          }
+        }}
+      >
         <Text style={styles.addBtnText}>Add student</Text>
       </TouchableOpacity>
 
-      <Text style={[styles.label, { marginTop: 20 }]}>Bulk add (one per line: Name, Assessment No.)</Text>
+      <Text style={[styles.label, { marginTop: 20 }]}>Bulk add (one per line: Name, Assessment No., Gender M/F)</Text>
+      <Text style={styles.hintSmall}>Gender is optional — leave it off a line if you don't have it yet.</Text>
       <View style={styles.pickerWrap}>
         <Picker selectedValue={bulkClassId} onValueChange={setBulkClassId}>
           <Picker.Item label="Select class" value="" />
@@ -135,7 +156,7 @@ function StudentsTab({ classes, students }) {
       </View>
       <TextInput
         style={[styles.input, { flex: 0, height: 90, textAlignVertical: "top" }]}
-        placeholder={"Jane Wanjiru, 7210\nBrian Otieno, 7211"}
+        placeholder={"Jane Wanjiru, 7210, F\nBrian Otieno, 7211, M"}
         multiline
         value={bulkText}
         onChangeText={setBulkText}
@@ -145,8 +166,9 @@ function StudentsTab({ classes, students }) {
         onPress={async () => {
           if (!bulkClassId || !bulkText.trim()) return;
           const rows = bulkText.split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
-            const [n, a] = line.split(",").map((p) => p && p.trim());
-            return { name: n || line, admNo: a || "", classId: bulkClassId };
+            const [n, a, g] = line.split(",").map((p) => p && p.trim());
+            const genderVal = g && /^[mf]$/i.test(g) ? g.toUpperCase() : null;
+            return { name: n || line, admNo: a || "", classId: bulkClassId, gender: genderVal };
           });
           await bulkAddStudents(rows);
           setBulkText("");
@@ -160,7 +182,10 @@ function StudentsTab({ classes, students }) {
         data={students}
         keyExtractor={(i) => i.id}
         renderItem={({ item }) => (
-          <Row left={`${item.name}  ·  ${item.admNo || "—"}  ·  ${classes.find((c) => c.id === item.classId)?.name || "—"}${item.graduated ? "  ·  Graduated" : ""}`} onRemove={() => removeStudent(item.id)} />
+          <Row
+            left={`${item.name}  ·  ${item.admNo || "—"}  ·  ${classes.find((c) => c.id === item.classId)?.name || "—"}${item.gender ? `  ·  ${item.gender}` : ""}${item.graduated ? "  ·  Graduated" : ""}`}
+            onRemove={() => removeStudent(item.id)}
+          />
         )}
       />
     </View>
@@ -274,6 +299,12 @@ function TeachersTab({ teachers, classes, subjects, isAdmin }) {
   const [classId, setClassId] = useState("");
   const [subjectId, setSubjectId] = useState("");
 
+  const sortedTeachers = [...teachers].sort((a, b) => {
+    const roleCompare = TEACHER_ROLES.indexOf(a.role) - TEACHER_ROLES.indexOf(b.role);
+    if (roleCompare !== 0) return roleCompare;
+    return (a.name || "").localeCompare(b.name || "");
+  });
+
   return (
     <View style={styles.section}>
       {!isAdmin && (
@@ -333,7 +364,7 @@ function TeachersTab({ teachers, classes, subjects, isAdmin }) {
         Teachers ({new Set(teachers.map((t) => t.name.trim().toLowerCase())).size} people, {teachers.length} role{teachers.length === 1 ? "" : "s"})
       </Text>
       <FlatList
-        data={teachers}
+        data={sortedTeachers}
         keyExtractor={(i) => i.id}
         renderItem={({ item }) => (
           <Row
@@ -461,4 +492,9 @@ const styles = StyleSheet.create({
   hintSmall: { color: COLORS.inkSoft, fontSize: 12.5, marginBottom: 12 },
   bandRow: { borderBottomWidth: 1, borderColor: COLORS.border, paddingVertical: 12 },
   miniLabel: { fontSize: 11, color: COLORS.inkSoft, marginBottom: 3 },
+  genderRow: { flexDirection: "row", gap: 8, marginBottom: 10 },
+  genderChip: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 16, paddingVertical: 7, paddingHorizontal: 16, backgroundColor: "#fff" },
+  genderChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  genderChipText: { fontSize: 12.5, color: COLORS.ink, fontWeight: "600" },
+  genderChipTextActive: { color: "#fff" },
 });

@@ -227,6 +227,47 @@ export default function AnalysisScreen({ classes, subjects, students, exams, ban
                   ))}
                 </View>
               </ScrollView>
+
+              <Text style={styles.section}>Gender performance — Boys vs Girls</Text>
+              {analysis.genderStats.map((g, i) => (
+                g.meanPoints !== null ? (
+                  <BarRow key={g.gender} label={`${g.label} (${g.studentCount})`} value={g.meanPoints} max={maxPoints} color={i === 0 ? "#1F4B43" : "#D9A441"} />
+                ) : (
+                  <Text key={g.gender} style={styles.hintSmall}>No {g.label.toLowerCase()} with scores yet.</Text>
+                )
+              ))}
+
+              <Text style={[styles.sectionSmall, { marginTop: 10 }]}>By subject</Text>
+              <View style={styles.tableWrap}>
+                <View style={styles.headerRow}>
+                  <Text style={[styles.th, { flex: 1.4, textAlign: "left" }]}>Subject</Text>
+                  <Text style={[styles.th, { flex: 1, textAlign: "center" }]}>Boys</Text>
+                  <Text style={[styles.th, { flex: 1, textAlign: "center" }]}>Girls</Text>
+                </View>
+                {analysis.subjectByGender.map((row) => (
+                  <View key={row.subject.id} style={styles.dataRow}>
+                    <Text style={[styles.td, { flex: 1.4 }]} numberOfLines={1}>{row.subject.name}</Text>
+                    <Text style={[styles.td, { flex: 1, textAlign: "center" }]}>{row.perGender.M !== null ? row.perGender.M.toFixed(1) : "—"}</Text>
+                    <Text style={[styles.td, { flex: 1, textAlign: "center" }]}>{row.perGender.F !== null ? row.perGender.F.toFixed(1) : "—"}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <Text style={[styles.sectionSmall, { marginTop: 10 }]}>By performance level</Text>
+              <View style={styles.tableWrap}>
+                <View style={styles.headerRow}>
+                  <Text style={[styles.th, { flex: 1, textAlign: "left" }]}>Level</Text>
+                  <Text style={[styles.th, { flex: 1, textAlign: "center" }]}>Boys</Text>
+                  <Text style={[styles.th, { flex: 1, textAlign: "center" }]}>Girls</Text>
+                </View>
+                {bands.map((b) => (
+                  <View key={b.id} style={styles.dataRow}>
+                    <Text style={[styles.td, { flex: 1, fontWeight: "700" }]}>{b.short}</Text>
+                    <Text style={[styles.td, { flex: 1, textAlign: "center" }]}>{analysis.genderLevelCounts.find((g) => g.gender === "M")?.counts[b.short] || 0}</Text>
+                    <Text style={[styles.td, { flex: 1, textAlign: "center" }]}>{analysis.genderLevelCounts.find((g) => g.gender === "F")?.counts[b.short] || 0}</Text>
+                  </View>
+                ))}
+              </View>
             </>
           )}
         </>

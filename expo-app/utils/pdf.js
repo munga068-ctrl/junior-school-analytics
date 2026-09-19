@@ -1,6 +1,7 @@
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { getBand, maxPointsOf, AUTO_COMMENTS, CLASS_TEACHER_REMARKS, HEAD_TEACHER_REMARKS } from "./constants";
+import { getStreamInitials } from "./analysis";
 
 const esc = (s) =>
   String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -380,6 +381,32 @@ export function buildAnalysisReportHtml({ meta, exam, analysis, baseline, bands 
     })
     .join("");
 
+  const genderChart = buildBarChartSvg(
+    analysis.genderStats
+      .filter((g) => g.meanPoints !== null)
+      .map((g) => ({ label: `${g.label} (${g.studentCount})`, value: g.meanPoints })),
+    { maxVal: maxPoints, unit: " pts", colors: ["#1F4B43", "#D9A441"] }
+  );
+
+  const genderSubjectRows = analysis.subjectByGender
+    .map((row) => {
+      const cell = (v) => {
+        const band = v !== null ? getBand(v, bands) : null;
+        const bg = band ? band.color + "33" : "#fff";
+        return `<td style="text-align:center;background:${bg};font-weight:${band ? 700 : 400};">${v !== null ? v.toFixed(1) : "—"}</td>`;
+      };
+      return `<tr><td style="text-align:left;">${esc(row.subject.name)}</td>${cell(row.perGender.M)}${cell(row.perGender.F)}</tr>`;
+    })
+    .join("");
+
+  const genderLevelRows = bands
+    .map((b) => {
+      const boys = analysis.genderLevelCounts.find((g) => g.gender === "M")?.counts[b.short] || 0;
+      const girls = analysis.genderLevelCounts.find((g) => g.gender === "F")?.counts[b.short] || 0;
+      return `<tr><td style="text-align:left;font-weight:600;">${esc(b.short)}</td><td style="text-align:center;">${boys}</td><td style="text-align:center;">${girls}</td></tr>`;
+    })
+    .join("");
+
   return `<html><head><meta charset="utf-8" /><style>${BASE_STYLE} body{padding:26px;}</style></head>
   <body>
     ${buildSchoolHeaderHtml(meta)}
@@ -403,6 +430,17 @@ export function buildAnalysisReportHtml({ meta, exam, analysis, baseline, bands 
     <table>
       <thead><tr><th style="text-align:left;">Level</th>${streamCols}</tr></thead>
       <tbody>${streamLevelRows}</tbody>
+    </table>
+
+    <h2>Gender Performance — Boys vs Girls</h2>
+    ${genderChart}
+    <table style="margin-top:10px;">
+      <thead><tr><th style="text-align:left;">Subject</th><th>Boys</th><th>Girls</th></tr></thead>
+      <tbody>${genderSubjectRows}</tbody>
+    </table>
+    <table style="margin-top:10px;">
+      <thead><tr><th style="text-align:left;">Level</th><th>Boys</th><th>Girls</th></tr></thead>
+      <tbody>${genderLevelRows}</tbody>
     </table>
   </body></html>`;
 }
@@ -429,7 +467,7 @@ export function buildCombinedStreamsHtml({ meta, exam, label, subjects, bands, r
       return `<tr>
         <td style="text-align:center;font-weight:700;">${r.combinedRank}</td>
         <td style="text-align:left;font-weight:600;">${esc(r.student.name)}</td>
-        <td style="text-align:left;">${esc(r.classObj?.name || "—")}</td>
+        <td style="text-align:left;">${esc(getStreamInitials(r.classObj) || r.classObj?.name || "—")}</td>
         ${cells}
         <td style="text-align:center;font-weight:700;">${r.total || 0}</td>
         <td style="text-align:center;">${r.mean !== null ? r.mean.toFixed(1) : "—"}</td>
