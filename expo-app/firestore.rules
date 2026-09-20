@@ -28,9 +28,20 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
-    // School details (name, address, logo, term dates) — admin only.
+    // School details (name, address, logo, term dates) — readable by anyone
+    // (even signed out) since the login screen shows the school name before
+    // sign-in; only admins can change it.
     match /settings/meta {
-      allow read: if isSignedIn();
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Public directory mapping teacher name -> login email, read before
+    // anyone is signed in so the login screen can resolve who's who.
+    // Only admins can update it (done automatically whenever a teacher's
+    // login is created).
+    match /settings/teacherLogins {
+      allow read: if true;
       allow write: if isAdmin();
     }
 
@@ -41,6 +52,12 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && !exists(/databases/$(database)/documents/settings/admins);
       allow update, delete: if isAdmin();
+    }
+
+    // Each person's own profile (picture, display name) — only they can
+    // read or write it, keyed by their own auth uid.
+    match /profiles/{uid} {
+      allow read, write: if isSignedIn() && request.auth.uid == uid;
     }
   }
 }

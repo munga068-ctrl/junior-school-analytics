@@ -1,5 +1,5 @@
-import { initializeApp } from "firebase/app";
-import { initializeAuth, getReactNativePersistence } from "firebase/auth";
+import { initializeApp, getApps } from "firebase/app";
+import { initializeAuth, getReactNativePersistence, getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -18,3 +18,12 @@ export const auth = initializeAuth(app, {
   persistence: getReactNativePersistence(AsyncStorage),
 });
 export const db = getFirestore(app);
+
+// A second, independent Firebase app instance used ONLY for creating teacher
+// login accounts from within the admin's session. Firebase's client SDK signs
+// the *current* user out whenever you create a new account on the same auth
+// instance — routing account creation through this separate instance keeps
+// the admin's own session untouched.
+const secondaryApp =
+  getApps().find((a) => a.name === "Secondary") || initializeApp(firebaseConfig, "Secondary");
+export const secondaryAuth = getAuth(secondaryApp);

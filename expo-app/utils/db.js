@@ -1,7 +1,8 @@
 import {
   collection, doc, getDocs, getDoc, setDoc, addDoc, deleteDoc, updateDoc, onSnapshot,
 } from "firebase/firestore";
-import { db } from "../firebaseConfig";
+import { createUserWithEmailAndPassword, signOut as secondarySignOut } from "firebase/auth";
+import { db, secondaryAuth } from "../firebaseConfig";
 import { DEFAULT_SUBJECTS, DEFAULT_BANDS } from "./constants";
 
 // Realtime list subscriptions. Each returns an unsubscribe function.
@@ -50,6 +51,57 @@ export const addTeacher = (name, role, classId, subjectId) =>
     subjectId: subjectId || null,
   });
 export const removeTeacher = (id) => deleteDoc(doc(db, "teachers", id));
+
+const slugify = (s) =>
+  (s || "teacher").toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "") || "teacher";
+
+// Creates (or re-issues) a login for a teacher: a real Firebase Auth account
+// under a synthetic email, made on a *secondary* app instance so it never
+// disturbs the admin's own signed-in session. Updates the teacher's record
+// with the new login email and refreshes the public login directory that
+// the login screen reads before anyone is signed in.
+export async function setTeacherPassword(teacherId, name, password, allTeachers) {
+  const email = `${slugify(name)}.${Math.random().toString(36).slice(2, 7)}@teachers.local`;
+  await createUserWithEmailAndPassword(secondaryAuth, email, password);
+  await secondarySignOut(secondaryAuth);
+  await updateDoc(doc(db, "teachers", teacherId), { loginEmail: email });
+  const list = allTeachers || [];
+  const found = list.some((t) => t.id === teacherId);
+  const updatedList = found
+    ? list.map((t) => (t.id === teacherId ? { ...t, loginEmail: email } : t))
+    : [...list, { id: teacherId, name, loginEmail: email }];
+  await syncTeacherLoginsDirectory(updatedList);
+  return email;
+}
+
+// Rebuilds the public (unauthenticated-readable) directory of teacher names
+// -> login emails, so the login screen can resolve "which account is this"
+// before the person is signed in to anything.
+export async function syncTeacherLoginsDirectory(teachers) {
+  const entries = (teachers || [])
+    .filter((t) => t.loginEmail)
+    .map((t) => ({ teacherId: t.id, name: t.name, loginEmail: t.loginEmail }));
+  await setDoc(doc(db, "settings", "teacherLogins"), { entries });
+}
+
+// One-time, unauthenticated-safe fetch used by the login screen before any
+// sign-in has happened.
+export async function getTeacherLoginDirectory() {
+  const snap = await getDoc(doc(db, "settings", "teacherLogins"));
+  return snap.exists() ? snap.data().entries || [] : [];
+}
+export async function getPublicSchoolName() {
+  const snap = await getDoc(doc(db, "settings", "meta"));
+  return snap.exists() ? snap.data().schoolName || "" : "";
+}
+
+// Per-person profile (picture, display name), keyed by their Firebase Auth
+// uid so it works the same for the admin and for every teacher account.
+export function listenProfile(uid, cb) {
+  if (!uid) return () => {};
+  return onSnapshot(doc(db, "profiles", uid), (snap) => cb(snap.exists() ? snap.data() : {}));
+}
+export const saveProfile = (uid, data) => setDoc(doc(db, "profiles", uid), data, { merge: true });
 
 // Admins are tracked as a plain list of emails in settings/admins.
 // The very first person to sign in (when this doc doesn't exist yet)

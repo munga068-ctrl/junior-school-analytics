@@ -5,9 +5,9 @@ import { COLORS } from "../utils/constants";
 import {
   addClass, removeClass, addSubject, removeSubject,
   addStudent, removeStudent, bulkAddStudents, addExam, removeExam, saveBands,
-  addTeacher, removeTeacher, applyPromotions,
+  addTeacher, removeTeacher, applyPromotions, setTeacherPassword,
 } from "../utils/db";
-import { buildPromotionPlan } from "../utils/analysis";
+import { buildPromotionPlan, getStreamInitials } from "../utils/analysis";
 
 const TABS = ["Classes", "Subjects", "Students", "Exams", "Performance Levels", "Teachers", "Promotion"];
 const GRADES = ["Grade 7", "Grade 8", "Grade 9"];
@@ -298,12 +298,51 @@ function TeachersTab({ teachers, classes, subjects, isAdmin }) {
   const [role, setRole] = useState(TEACHER_ROLES[0]);
   const [classId, setClassId] = useState("");
   const [subjectId, setSubjectId] = useState("");
+  const [password, setPassword] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const sortedTeachers = [...teachers].sort((a, b) => {
-    const roleCompare = TEACHER_ROLES.indexOf(a.role) - TEACHER_ROLES.indexOf(b.role);
-    if (roleCompare !== 0) return roleCompare;
-    return (a.name || "").localeCompare(b.name || "");
-  });
+  const roleOrder = { "Class Teacher": 0, "Head Teacher": 1, "Subject Teacher": 2 };
+  const nonSubjectTeachers = [...teachers]
+    .filter((t) => t.role !== "Subject Teacher")
+    .sort((a, b) => (roleOrder[a.role] ?? 9) - (roleOrder[b.role] ?? 9) || (a.name || "").localeCompare(b.name || ""));
+
+  // Group subject-teacher records by (name, subject) so "Mathematics, 8Y and
+  // 8G" shows as one row instead of two.
+  const subjectGroups = [];
+  teachers
+    .filter((t) => t.role === "Subject Teacher")
+    .forEach((t) => {
+      const key = `${t.name.trim().toLowerCase()}|${t.subjectId}`;
+      let group = subjectGroups.find((g) => g.key === key);
+      if (!group) {
+        group = { key, name: t.name, subjectId: t.subjectId, classIds: [] };
+        subjectGroups.push(group);
+      }
+      if (t.classId) group.classIds.push(t.classId);
+    });
+  subjectGroups.sort((a, b) => a.name.localeCompare(b.name) || (a.subjectId || "").localeCompare(b.subjectId || ""));
+
+  const resetForm = () => { setName(""); setClassId(""); setSubjectId(""); setPassword(""); };
+
+  const handleAdd = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    try {
+      const ref = await addTeacher(
+        name.trim(),
+        role,
+        role === "Class Teacher" || role === "Subject Teacher" ? classId : null,
+        role === "Subject Teacher" ? subjectId : null
+      );
+      if (password.trim()) {
+        await setTeacherPassword(ref.id, name.trim(), password.trim(), teachers);
+      }
+      resetForm();
+    } catch (e) {
+      Alert.alert("Couldn't add teacher", e?.message || "Something went wrong. Try again.");
+    }
+    setSaving(false);
+  };
 
   return (
     <View style={styles.section}>
@@ -343,41 +382,59 @@ function TeachersTab({ teachers, classes, subjects, isAdmin }) {
               </View>
             </>
           )}
-          <TouchableOpacity
-            style={styles.addBtn}
-            onPress={() => {
-              if (!name.trim()) return;
-              addTeacher(
-                name.trim(),
-                role,
-                role === "Class Teacher" || role === "Subject Teacher" ? classId : null,
-                role === "Subject Teacher" ? subjectId : null
-              );
-              setName(""); setClassId(""); setSubjectId("");
-            }}
-          >
-            <Text style={styles.addBtnText}>Add teacher</Text>
+          <Text style={styles.miniLabel}>App login password (optional)</Text>
+          <Text style={styles.hintSmall}>Leave blank if this teacher doesn't need to sign into the app yet. You can add it later from Profile.</Text>
+          <TextInput
+            style={[styles.input, { flex: 0, marginBottom: 10 }]}
+            placeholder="Password"
+            secureTextEntry
+            value={password}
+            onChangeText={setPassword}
+          />
+          <TouchableOpacity style={styles.addBtn} onPress={handleAdd} disabled={saving}>
+            <Text style={styles.addBtnText}>{saving ? "Adding…" : "Add teacher"}</Text>
           </TouchableOpacity>
         </>
       )}
-      <Text style={[styles.label, { marginTop: 20 }]}>
-        Teachers ({new Set(teachers.map((t) => t.name.trim().toLowerCase())).size} people, {teachers.length} role{teachers.length === 1 ? "" : "s"})
+
+      <Text style={[styles.label, { marginTop: 22 }]}>
+        Teachers ({new Set(teachers.map((t) => t.name.trim().toLowerCase())).size} people)
       </Text>
-      <FlatList
-        data={sortedTeachers}
-        keyExtractor={(i) => i.id}
-        renderItem={({ item }) => (
-          <Row
-            left={`${item.name}  ·  ${item.role}${
-              item.subjectId ? `  ·  ${subjects.find((s) => s.id === item.subjectId)?.name || ""}` : ""
-            }${
-              item.classId ? `  ·  ${classes.find((c) => c.id === item.classId)?.name || ""}` : ""
-            }`}
-            onRemove={isAdmin ? () => removeTeacher(item.id) : undefined}
-          />
-        )}
-        ListEmptyComponent={<Text style={styles.empty}>No teachers added yet.</Text>}
-      />
+
+      {nonSubjectTeachers.length > 0 && (
+        <View style={{ marginBottom: 14 }}>
+          {nonSubjectTeachers.map((item) => (
+            <Row
+              key={item.id}
+              left={`${item.name}  ·  ${item.role}${item.classId ? `  ·  ${classes.find((c) => c.id === item.classId)?.name || ""}` : ""}${item.loginEmail ? "  ·  Has login" : ""}`}
+              onRemove={isAdmin ? () => removeTeacher(item.id) : undefined}
+            />
+          ))}
+        </View>
+      )}
+
+      <View style={styles.tableWrap}>
+        <View style={styles.tableHeaderRow}>
+          <Text style={[styles.tableTh, { flex: 1.4 }]}>TEACHER</Text>
+          <Text style={[styles.tableTh, { flex: 0.8, textAlign: "center" }]}>LEARNING AREA</Text>
+          <Text style={[styles.tableTh, { flex: 1, textAlign: "center" }]}>GRADE</Text>
+        </View>
+        {subjectGroups.map((g) => {
+          const subject = subjects.find((s) => s.id === g.subjectId);
+          const gradeLabel = g.classIds
+            .map((cid) => getStreamInitials(classes.find((c) => c.id === cid)))
+            .filter(Boolean)
+            .join(", ");
+          return (
+            <View key={g.key} style={styles.tableRow}>
+              <Text style={[styles.tableTd, { flex: 1.4 }]} numberOfLines={1}>{g.name}</Text>
+              <Text style={[styles.tableTd, { flex: 0.8, textAlign: "center" }]}>{subject?.code || "—"}</Text>
+              <Text style={[styles.tableTd, { flex: 1, textAlign: "center" }]}>{gradeLabel || "—"}</Text>
+            </View>
+          );
+        })}
+        {subjectGroups.length === 0 && <Text style={[styles.empty, { padding: 10 }]}>No subject teachers added yet.</Text>}
+      </View>
     </View>
   );
 }
@@ -497,4 +554,9 @@ const styles = StyleSheet.create({
   genderChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   genderChipText: { fontSize: 12.5, color: COLORS.ink, fontWeight: "600" },
   genderChipTextActive: { color: "#fff" },
+  tableWrap: { backgroundColor: "#fff", borderWidth: 1, borderColor: COLORS.border, borderRadius: 6, overflow: "hidden" },
+  tableHeaderRow: { flexDirection: "row", backgroundColor: COLORS.primary },
+  tableTh: { color: "#fff", fontSize: 10.5, fontWeight: "700", padding: 8 },
+  tableRow: { flexDirection: "row", borderBottomWidth: 1, borderColor: COLORS.border, alignItems: "center" },
+  tableTd: { fontSize: 12, padding: 8, color: COLORS.ink },
 });
