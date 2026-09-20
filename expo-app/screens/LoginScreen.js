@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
 import { Picker } from "@react-native-picker/picker";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../firebaseConfig";
 import { COLORS } from "../utils/constants";
-import { getPublicSchoolName, getTeacherLoginDirectory } from "../utils/db";
+import { getPublicSchoolName, getTeacherLoginDirectory, getSetupStatus } from "../utils/db";
 
 const AUTH_ERROR_MESSAGES = {
   "auth/invalid-api-key": "Firebase config error: invalid API key. Check firebaseConfig.js.",
@@ -32,6 +32,10 @@ export default function LoginScreen() {
   const [teacherId, setTeacherId] = useState("");
   const [teacherPassword, setTeacherPassword] = useState("");
 
+  const [hasAdmin, setHasAdmin] = useState(true); // default true = hide signup until we know otherwise
+  const [signupMode, setSignupMode] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState("");
+
   const checkSchoolName = async () => {
     if (!schoolNameInput.trim()) {
       setError("Enter your school's name");
@@ -47,8 +51,9 @@ export default function LoginScreen() {
       } else if (name.trim().toLowerCase() !== schoolNameInput.trim().toLowerCase()) {
         setError("That doesn't match this app's school name. Check the spelling and try again.");
       } else {
-        const list = await getTeacherLoginDirectory();
+        const [list, status] = await Promise.all([getTeacherLoginDirectory(), getSetupStatus()]);
         setDirectory(list);
+        setHasAdmin(!!status.hasAdmin);
         setStep("role");
       }
     } catch (e) {
@@ -68,6 +73,41 @@ export default function LoginScreen() {
       await signInWithEmailAndPassword(auth, email.trim(), password);
     } catch (e) {
       setError(AUTH_ERROR_MESSAGES[e?.code] || `Couldn't sign in (${e?.code || "unknown error"}).`);
+    }
+    setLoading(false);
+  };
+
+  const handleAdminSignup = async () => {
+    if (!email.trim() || !password) {
+      setError("Enter an email and password");
+      return;
+    }
+    if (password.length < 6) {
+      setError("Password should be at least 6 characters");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords don't match");
+      return;
+    }
+    setError("");
+    setLoading(true);
+    try {
+      // Re-check right before creating the account — closes the gap where
+      // two people might both load this screen before either finishes.
+      const status = await getSetupStatus();
+      if (status.hasAdmin) {
+        setHasAdmin(true);
+        setSignupMode(false);
+        setError("An admin account already exists now — please sign in instead.");
+        setLoading(false);
+        return;
+      }
+      await createUserWithEmailAndPassword(auth, email.trim(), password);
+      // App.js's ensureAdminBootstrap runs automatically once signed in and
+      // makes this account the admin, since none exists yet.
+    } catch (e) {
+      setError(AUTH_ERROR_MESSAGES[e?.code] || `Couldn't create the account (${e?.code || "unknown error"}).`);
     }
     setLoading(false);
   };
@@ -133,7 +173,7 @@ export default function LoginScreen() {
 
       {step === "admin" && (
         <>
-          <Text style={styles.subtitle}>Admin sign in</Text>
+          <Text style={styles.subtitle}>{signupMode ? "Create the admin account" : "Admin sign in"}</Text>
           <TextInput
             style={styles.input}
             placeholder="Email"
@@ -143,11 +183,21 @@ export default function LoginScreen() {
             onChangeText={setEmail}
           />
           <TextInput style={styles.input} placeholder="Password" secureTextEntry value={password} onChangeText={setPassword} />
+          {signupMode && (
+            <TextInput style={styles.input} placeholder="Confirm password" secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} />
+          )}
           {!!error && <Text style={styles.error}>{error}</Text>}
-          <TouchableOpacity style={styles.button} onPress={handleAdminLogin} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Sign in</Text>}
+          <TouchableOpacity style={styles.button} onPress={signupMode ? handleAdminSignup : handleAdminLogin} disabled={loading}>
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{signupMode ? "Create account" : "Sign in"}</Text>}
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => { setStep("role"); setError(""); }}>
+          {!hasAdmin && (
+            <TouchableOpacity onPress={() => { setSignupMode(!signupMode); setError(""); setConfirmPassword(""); }}>
+              <Text style={styles.backLink}>
+                {signupMode ? "Already have an admin account? Sign in instead" : "First time? Create the admin account"}
+              </Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={() => { setStep("role"); setError(""); setSignupMode(false); }}>
             <Text style={styles.backLink}>Back</Text>
           </TouchableOpacity>
         </>

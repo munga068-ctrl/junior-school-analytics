@@ -117,7 +117,18 @@ export async function ensureAdminBootstrap(email) {
   const snap = await getDoc(ref);
   if (!snap.exists()) {
     await setDoc(ref, { emails: [email] });
+    // Public flag so the login screen can tell, before anyone is signed in,
+    // whether it's safe to still offer "create the first admin account".
+    await setDoc(doc(db, "settings", "setupStatus"), { hasAdmin: true });
   }
+}
+
+// Unauthenticated-safe check used only to decide whether the login screen
+// should still offer first-admin signup. Never exposes the actual admin
+// list — just a yes/no flag.
+export async function getSetupStatus() {
+  const snap = await getDoc(doc(db, "settings", "setupStatus"));
+  return snap.exists() ? snap.data() : { hasAdmin: false };
 }
 export const addAdminEmail = async (currentEmails, email) => {
   const next = Array.from(new Set([...(currentEmails || []), email]));

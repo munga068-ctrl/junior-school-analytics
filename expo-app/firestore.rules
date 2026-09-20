@@ -54,6 +54,13 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // Public yes/no flag (never the actual admin list) so the login screen
+    // can decide whether "create the first admin account" should still show.
+    match /settings/setupStatus {
+      allow read: if true;
+      allow write: if isSignedIn() && !exists(/databases/$(database)/documents/settings/setupStatus);
+    }
+
     // Each person's own profile (picture, display name) — only they can
     // read or write it, keyed by their own auth uid.
     match /profiles/{uid} {
