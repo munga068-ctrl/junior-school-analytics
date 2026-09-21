@@ -16,25 +16,38 @@ const AUTH_ERROR_MESSAGES = {
   "auth/network-request-failed": "Network error — check your internet connection.",
   "auth/operation-not-allowed": "Email/Password sign-in isn't enabled for this Firebase project.",
   "auth/invalid-email": "That doesn't look like a valid email address.",
+  "auth/email-already-in-use": "An account with that email already exists.",
 };
 
 export default function LoginScreen() {
-  const [step, setStep] = useState("school"); // school -> role -> admin | teacher
-  const [schoolNameInput, setSchoolNameInput] = useState("");
-  const [realSchoolName, setRealSchoolName] = useState("");
+  // loading -> start (only if no admin exists yet) -> school -> role -> admin | teacher
+  // loading -> school (skips "start" once an admin already exists)
+  // start -> signup (create the first admin account, no school name needed)
+  const [step, setStep] = useState("loading");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const [schoolNameInput, setSchoolNameInput] = useState("");
+  const [realSchoolName, setRealSchoolName] = useState("");
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   const [directory, setDirectory] = useState([]);
   const [teacherId, setTeacherId] = useState("");
   const [teacherPassword, setTeacherPassword] = useState("");
 
-  const [hasAdmin, setHasAdmin] = useState(true); // default true = hide signup until we know otherwise
-  const [signupMode, setSignupMode] = useState(false);
-  const [confirmPassword, setConfirmPassword] = useState("");
+  useEffect(() => {
+    (async () => {
+      try {
+        const status = await getSetupStatus();
+        setStep(status.hasAdmin ? "school" : "start");
+      } catch {
+        setStep("school");
+      }
+    })();
+  }, []);
 
   const checkSchoolName = async () => {
     if (!schoolNameInput.trim()) {
@@ -51,9 +64,8 @@ export default function LoginScreen() {
       } else if (name.trim().toLowerCase() !== schoolNameInput.trim().toLowerCase()) {
         setError("That doesn't match this app's school name. Check the spelling and try again.");
       } else {
-        const [list, status] = await Promise.all([getTeacherLoginDirectory(), getSetupStatus()]);
+        const list = await getTeacherLoginDirectory();
         setDirectory(list);
-        setHasAdmin(!!status.hasAdmin);
         setStep("role");
       }
     } catch (e) {
@@ -97,8 +109,7 @@ export default function LoginScreen() {
       // two people might both load this screen before either finishes.
       const status = await getSetupStatus();
       if (status.hasAdmin) {
-        setHasAdmin(true);
-        setSignupMode(false);
+        setStep("school");
         setError("An admin account already exists now — please sign in instead.");
         setLoading(false);
         return;
@@ -135,6 +146,45 @@ export default function LoginScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Junior School Analytics</Text>
+
+      {step === "loading" && <ActivityIndicator color={COLORS.primary} />}
+
+      {step === "start" && (
+        <>
+          <Text style={styles.subtitle}>Welcome — let's get this app set up</Text>
+          <TouchableOpacity style={styles.roleCard} onPress={() => { setError(""); setStep("signup"); }}>
+            <Text style={styles.roleCardTitle}>Create admin account</Text>
+            <Text style={styles.roleCardHint}>First time setting up this app? Start here.</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.roleCard} onPress={() => { setError(""); setStep("school"); }}>
+            <Text style={styles.roleCardTitle}>Sign in</Text>
+            <Text style={styles.roleCardHint}>Already have an account? Sign in here.</Text>
+          </TouchableOpacity>
+        </>
+      )}
+
+      {step === "signup" && (
+        <>
+          <Text style={styles.subtitle}>Create the admin account</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Email"
+            autoCapitalize="none"
+            keyboardType="email-address"
+            value={email}
+            onChangeText={setEmail}
+          />
+          <TextInput style={styles.input} placeholder="Password" secureTextEntry value={password} onChangeText={setPassword} />
+          <TextInput style={styles.input} placeholder="Confirm password" secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} />
+          {!!error && <Text style={styles.error}>{error}</Text>}
+          <TouchableOpacity style={styles.button} onPress={handleAdminSignup} disabled={loading}>
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Create account</Text>}
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => { setStep("start"); setError(""); }}>
+            <Text style={styles.backLink}>Back</Text>
+          </TouchableOpacity>
+        </>
+      )}
 
       {step === "school" && (
         <>
@@ -173,7 +223,7 @@ export default function LoginScreen() {
 
       {step === "admin" && (
         <>
-          <Text style={styles.subtitle}>{signupMode ? "Create the admin account" : "Admin sign in"}</Text>
+          <Text style={styles.subtitle}>Admin sign in</Text>
           <TextInput
             style={styles.input}
             placeholder="Email"
@@ -183,21 +233,11 @@ export default function LoginScreen() {
             onChangeText={setEmail}
           />
           <TextInput style={styles.input} placeholder="Password" secureTextEntry value={password} onChangeText={setPassword} />
-          {signupMode && (
-            <TextInput style={styles.input} placeholder="Confirm password" secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} />
-          )}
           {!!error && <Text style={styles.error}>{error}</Text>}
-          <TouchableOpacity style={styles.button} onPress={signupMode ? handleAdminSignup : handleAdminLogin} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{signupMode ? "Create account" : "Sign in"}</Text>}
+          <TouchableOpacity style={styles.button} onPress={handleAdminLogin} disabled={loading}>
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Sign in</Text>}
           </TouchableOpacity>
-          {!hasAdmin && (
-            <TouchableOpacity onPress={() => { setSignupMode(!signupMode); setError(""); setConfirmPassword(""); }}>
-              <Text style={styles.backLink}>
-                {signupMode ? "Already have an admin account? Sign in instead" : "First time? Create the admin account"}
-              </Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity onPress={() => { setStep("role"); setError(""); setSignupMode(false); }}>
+          <TouchableOpacity onPress={() => { setStep("role"); setError(""); }}>
             <Text style={styles.backLink}>Back</Text>
           </TouchableOpacity>
         </>
