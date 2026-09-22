@@ -117,8 +117,14 @@ export async function ensureAdminBootstrap(email) {
   const snap = await getDoc(ref);
   if (!snap.exists()) {
     await setDoc(ref, { emails: [email] });
-    // Public flag so the login screen can tell, before anyone is signed in,
-    // whether it's safe to still offer "create the first admin account".
+    await setDoc(doc(db, "settings", "setupStatus"), { hasAdmin: true });
+    return;
+  }
+  // Self-heal: an admins list can already exist from before the public
+  // setupStatus flag existed. Whenever that's the case, fix the flag so the
+  // login screen stops incorrectly offering "create the first admin account".
+  const statusSnap = await getDoc(doc(db, "settings", "setupStatus"));
+  if (!statusSnap.exists() || !statusSnap.data()?.hasAdmin) {
     await setDoc(doc(db, "settings", "setupStatus"), { hasAdmin: true });
   }
 }
