@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Image, ActivityIndicator, Alert } from "react-native";
 import { signOut } from "firebase/auth";
+import * as Updates from "expo-updates";
 import { auth } from "../firebaseConfig";
 import { COLORS } from "../utils/constants";
 import { listenProfile, saveProfile, setTeacherPassword } from "../utils/db";
 import { getInitials } from "../utils/analysis";
+import { pickAndUploadImage } from "../utils/imageUpload";
 
-function describeRecord(r, classes, subjects) {
+function describeRecord(r, classes, learningAreas) {
   if (r.role === "Class Teacher") return `Class Teacher — ${classes.find((c) => c.id === r.classId)?.name || "—"}`;
   if (r.role === "Head Teacher") return "Head Teacher";
   if (r.role === "Subject Teacher") {
-    const subj = subjects.find((s) => s.id === r.subjectId);
+    const subj = learningAreas.find((s) => s.id === r.subjectId);
     const cls = classes.find((c) => c.id === r.classId);
-    return `${subj?.name || "Subject"} — ${cls?.name || "—"}`;
+    return `${subj?.name || "Learning Area"} — ${cls?.name || "—"}`;
   }
   return r.role;
 }
@@ -39,10 +41,12 @@ function Avatar({ url, label }) {
   );
 }
 
-export default function ProfileScreen({ user, teachers, classes, subjects, isAdmin }) {
+export default function ProfileScreen({ user, teachers, classes, learningAreas, isAdmin }) {
   const [profile, setProfile] = useState({});
   const [photoUrl, setPhotoUrl] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -61,10 +65,78 @@ export default function ProfileScreen({ user, teachers, classes, subjects, isAdm
 
   const savePicture = () => saveProfile(user.uid, { ...profile, photoUrl, displayName });
 
+  const handleImageUpload = async () => {
+    setUploading(true);
+    try {
+      const url = await pickAndUploadImage("profiles", `${user.uid}_${Date.now()}.jpg`);
+      if (url) {
+        setPhotoUrl(url);
+        await saveProfile(user.uid, { ...profile, photoUrl: url, displayName });
+        Alert.alert("Success", "Profile picture uploaded successfully!");
+      }
+    } catch (error) {
+      Alert.alert("Upload failed", error.message || "Could not upload image. Please try again.");
+    }
+    setUploading(false);
+  };
+
+  const checkForUpdates = async () => {
+    if (__DEV__) {
+      Alert.alert("Development Mode", "Updates are only available in production builds.");
+      return;
+    }
+
+    setCheckingUpdate(true);
+    try {
+      const update = await Updates.checkForUpdateAsync();
+
+      if (update.isAvailable) {
+        Alert.alert(
+          "Update Available",
+          "A new version is available. Would you like to download and install it?",
+          [
+            { text: "Later", style: "cancel" },
+            {
+              text: "Update Now",
+              onPress: async () => {
+                try {
+                  await Updates.fetchUpdateAsync();
+                  Alert.alert(
+                    "Update Downloaded",
+                    "The update has been downloaded. The app will restart to apply it.",
+                    [
+                      {
+                        text: "Restart Now",
+                        onPress: async () => await Updates.reloadAsync(),
+                      },
+                    ]
+                  );
+                } catch (e) {
+                  Alert.alert("Update Failed", "Could not download the update. Please try again later.");
+                }
+              },
+            },
+          ]
+        );
+      } else {
+        Alert.alert("No Updates", "You are already running the latest version!");
+      }
+    } catch (e) {
+      Alert.alert("Check Failed", "Could not check for updates. Please try again later.");
+    }
+    setCheckingUpdate(false);
+  };
+
   const headline = isAdmin ? (displayName || "Admin") : (displayName || myLoginRecord?.name || "Teacher");
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 18 }}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={{ padding: 18 }}
+      removeClippedSubviews={true}
+      maxToRenderPerBatch={5}
+      windowSize={5}
+    >
       <View style={styles.headerRow}>
         <Avatar url={photoUrl} label={headline} />
         <View style={{ marginLeft: 14, flex: 1 }}>
@@ -74,8 +146,19 @@ export default function ProfileScreen({ user, teachers, classes, subjects, isAdm
       </View>
 
       <Text style={styles.sectionLabel}>Profile picture</Text>
-      <Text style={styles.hintSmall}>Paste a link to an already-hosted image (no file upload yet).</Text>
-      <TextInput style={[styles.input, { flex: 0 }]} placeholder="Image URL" value={photoUrl} onChangeText={setPhotoUrl} />
+      <TouchableOpacity
+        style={[styles.uploadBtn, uploading && { opacity: 0.6 }]}
+        onPress={handleImageUpload}
+        disabled={uploading}
+      >
+        {uploading ? (
+          <ActivityIndicator color="#fff" size="small" />
+        ) : (
+          <Text style={styles.uploadBtnText}>📷 Upload from device</Text>
+        )}
+      </TouchableOpacity>
+      <Text style={styles.hintSmall}>Or paste a link to an already-hosted image below:</Text>
+      <TextInput style={[styles.input, { flex: 0 }]} placeholder="Image URL (optional)" value={photoUrl} onChangeText={setPhotoUrl} />
       <Text style={[styles.sectionLabel, { marginTop: 12 }]}>Display name</Text>
       <TextInput style={[styles.input, { flex: 0 }]} placeholder="How your name should appear" value={displayName} onChangeText={setDisplayName} />
       <TouchableOpacity style={styles.saveBtn} onPress={savePicture}>
@@ -90,7 +173,7 @@ export default function ProfileScreen({ user, teachers, classes, subjects, isAdm
           ) : (
             <View style={styles.card}>
               {myRecords.map((r) => (
-                <Text key={r.id} style={styles.cardLine}>• {describeRecord(r, classes, subjects)}</Text>
+                <Text key={r.id} style={styles.cardLine}>• {describeRecord(r, classes, learningAreas)}</Text>
               ))}
             </View>
           )}
@@ -98,8 +181,22 @@ export default function ProfileScreen({ user, teachers, classes, subjects, isAdm
       )}
 
       {isAdmin && (
-        <AdminTeacherAccess teachers={teachers} classes={classes} subjects={subjects} />
+        <AdminTeacherAccess teachers={teachers} classes={classes} learningAreas={learningAreas} user={user} />
       )}
+
+      <Text style={[styles.sectionLabel, { marginTop: 22 }]}>App Updates</Text>
+      <Text style={styles.hintSmall}>Check for and install the latest app updates over the air.</Text>
+      <TouchableOpacity
+        style={[styles.updateBtn, checkingUpdate && { opacity: 0.6 }]}
+        onPress={checkForUpdates}
+        disabled={checkingUpdate}
+      >
+        {checkingUpdate ? (
+          <ActivityIndicator color="#fff" size="small" />
+        ) : (
+          <Text style={styles.updateBtnText}>🔄 Check for Updates</Text>
+        )}
+      </TouchableOpacity>
 
       <TouchableOpacity style={styles.signOut} onPress={() => signOut(auth)}>
         <Text style={styles.signOutText}>Sign out</Text>
@@ -108,7 +205,7 @@ export default function ProfileScreen({ user, teachers, classes, subjects, isAdm
   );
 }
 
-function AdminTeacherAccess({ teachers, classes, subjects }) {
+function AdminTeacherAccess({ teachers, classes, learningAreas, user }) {
   const [openFor, setOpenFor] = useState("");
   const [pw, setPw] = useState("");
   const [saving, setSaving] = useState(false);
@@ -118,7 +215,7 @@ function AdminTeacherAccess({ teachers, classes, subjects }) {
     if (!pw.trim()) return;
     setSaving(true);
     try {
-      await setTeacherPassword(group.representativeId, group.name, pw.trim(), teachers);
+      await setTeacherPassword(user.uid, group.representativeId, group.name, pw.trim(), teachers);
       setOpenFor("");
       setPw("");
       Alert.alert("Done", `${group.name}'s password has been set.`);
@@ -131,7 +228,7 @@ function AdminTeacherAccess({ teachers, classes, subjects }) {
   return (
     <>
       <Text style={[styles.sectionLabel, { marginTop: 22 }]}>Teachers & access</Text>
-      <Text style={styles.hintSmall}>Set or reset a teacher's app login password. They'll sign in by selecting their name.</Text>
+      <Text style={styles.hintSmall}>Set or reset a teacher's app login password. They'll sign in by selecting their name and entering the School ID: {user?.uid}</Text>
       {groups.length === 0 && <Text style={styles.hintSmall}>No teachers added yet — add them in Setup.</Text>}
       {groups.map((g) => (
         <View key={g.name} style={styles.card}>
@@ -139,7 +236,7 @@ function AdminTeacherAccess({ teachers, classes, subjects }) {
             <View style={{ flex: 1 }}>
               <Text style={styles.cardTitle}>{g.name}</Text>
               {g.records.map((r) => (
-                <Text key={r.id} style={styles.cardLine}>• {describeRecord(r, classes, subjects)}</Text>
+                <Text key={r.id} style={styles.cardLine}>• {describeRecord(r, classes, learningAreas)}</Text>
               ))}
               <Text style={[styles.hintSmall, { marginTop: 4, marginBottom: 0 }]}>{g.loginEmail ? "Has app login" : "No app login yet"}</Text>
             </View>
@@ -178,6 +275,8 @@ const styles = StyleSheet.create({
   sectionLabel: { fontSize: 14, fontWeight: "700", color: COLORS.primary, marginBottom: 4 },
   hintSmall: { fontSize: 11.5, color: COLORS.inkSoft, marginBottom: 8 },
   input: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 6, padding: 10, backgroundColor: "#fff", fontSize: 13.5, marginBottom: 4 },
+  uploadBtn: { backgroundColor: COLORS.accent, borderRadius: 6, paddingVertical: 11, alignItems: "center", marginBottom: 8 },
+  uploadBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
   saveBtn: { backgroundColor: COLORS.primary, borderRadius: 6, paddingVertical: 11, alignItems: "center", marginTop: 10 },
   saveBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
   card: { backgroundColor: "#fff", borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, padding: 12, marginBottom: 10 },
@@ -186,6 +285,8 @@ const styles = StyleSheet.create({
   smallBtn: { backgroundColor: COLORS.primary, borderRadius: 6, paddingVertical: 8, paddingHorizontal: 14, alignItems: "center" },
   smallBtnOutline: { backgroundColor: "#fff", borderWidth: 1, borderColor: COLORS.border },
   smallBtnText: { color: "#fff", fontWeight: "700", fontSize: 12.5 },
+  updateBtn: { backgroundColor: COLORS.accent, borderRadius: 6, paddingVertical: 11, alignItems: "center", marginBottom: 8 },
+  updateBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
   signOut: { marginTop: 24, marginBottom: 10, alignSelf: "flex-start", borderWidth: 1, borderColor: "#E8C4BE", borderRadius: 6, paddingVertical: 8, paddingHorizontal: 14 },
   signOutText: { color: "#C0392B", fontSize: 13, fontWeight: "600" },
 });

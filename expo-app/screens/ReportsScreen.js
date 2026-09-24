@@ -1,57 +1,84 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
 import { Picker } from "@react-native-picker/picker";
-import { COLORS, getBand } from "../utils/constants";
-import { listenExamScores, getScoresForExams } from "../utils/db";
-import { computeAnalysis, getGradeForClass, getTermKey, getTermOptions, buildTermAverageScores, getInitials, examAppliesToGrade } from "../utils/analysis";
-import { generateAndSharePdf, buildClassReportHtml, buildStudentReportCardsHtml, buildCombinedStreamsHtml } from "../utils/pdf";
+import { COLORS, getBand, getOrdinalSuffix } from "../utils/constants";
+import { listenAssessmentScores, getScoresForAssessments } from "../utils/db";
+import { computeAnalysis, computeAssessmentDeviations, getGradeForClass, getTermKey, getTermOptions, buildTermAverageScores, getInitials, examAppliesToGrade } from "../utils/analysis";
+import { generateAndSharePdf, generateAndDownloadPdf, buildClassReportHtml, buildStudentReportCardsHtml, buildCombinedStreamsHtml } from "../utils/pdf";
 
-export default function ReportsScreen({ classes, subjects, students, exams, bands, meta, teachers }) {
+export default function ReportsScreen({ schoolId, classes, learningAreas, learners, assessments, bands, meta, teachers }) {
   const [termKey, setTermKey] = useState("");
-  const [examId, setExamId] = useState("");
+  const [assessmentId, setAssessmentId] = useState("");
   const [classId, setClassId] = useState("");
   const [cardClassId, setCardClassId] = useState("");
   const [selectedStreamIds, setSelectedStreamIds] = useState([]);
+  const [compareAssessmentId, setCompareAssessmentId] = useState("");
   const [data, setData] = useState({});
+  const [previousData, setPreviousData] = useState({});
   const [generating, setGenerating] = useState("");
   const [generatingCards, setGeneratingCards] = useState(false);
   const [generatingCombined, setGeneratingCombined] = useState(false);
 
-  const termOptions = useMemo(() => getTermOptions(exams), [exams]);
-  const examsInTerm = useMemo(() => exams.filter((e) => getTermKey(e) === termKey), [exams, termKey]);
+  const termOptions = useMemo(() => getTermOptions(assessments), [assessments]);
+  const assessmentsInTerm = useMemo(() => assessments.filter((e) => getTermKey(e) === termKey), [assessments, termKey]);
   const cardClassGrade = useMemo(
     () => (cardClassId ? getGradeForClass(classes.find((c) => c.id === cardClassId)) : ""),
     [cardClassId, classes]
   );
-  const examsForCardClass = useMemo(
-    () => examsInTerm.filter((e) => examAppliesToGrade(e, cardClassGrade)),
-    [examsInTerm, cardClassGrade]
+  const assessmentsForCardClass = useMemo(
+    () => assessmentsInTerm.filter((e) => examAppliesToGrade(e, cardClassGrade)),
+    [assessmentsInTerm, cardClassGrade]
   );
   const termLabel = useMemo(() => {
     const t = termOptions.find((t) => t.key === termKey);
     return t ? `Term ${t.term}, ${t.year}` : "";
   }, [termOptions, termKey]);
 
-  // Reset the exam/class choices whenever the term changes, since they only make sense within it.
-  useEffect(() => { setExamId(""); setClassId(""); setSelectedStreamIds([]); }, [termKey]);
+  const currentAssessment = assessments.find((e) => e.id === assessmentId);
+  const suggestedPreviousAssessment = useMemo(() => {
+    if (!currentAssessment || !currentAssessment.sequence) return null;
+    const prevSeq = currentAssessment.sequence - 1;
+    if (prevSeq < 1) return null;
+    return assessments.find((e) =>
+      e.sequence === prevSeq &&
+      e.term === currentAssessment.term &&
+      e.year === currentAssessment.year &&
+      e.grade === currentAssessment.grade
+    );
+  }, [currentAssessment, assessments]);
+
+  // Auto-select previous assessment when current assessment changes
+  useEffect(() => {
+    if (suggestedPreviousAssessment && !compareAssessmentId) {
+      setCompareAssessmentId(suggestedPreviousAssessment.id);
+    }
+  }, [suggestedPreviousAssessment]);
+
+  // Reset the assessment/class choices whenever the term changes
+  useEffect(() => { setAssessmentId(""); setClassId(""); setSelectedStreamIds([]); setCompareAssessmentId(""); }, [termKey]);
 
   useEffect(() => {
-    if (!examId) { setData({}); return; }
-    const unsub = listenExamScores(examId, setData);
+    if (!assessmentId) { setData({}); return; }
+    const unsub = listenAssessmentScores(schoolId, assessmentId, setData);
     return unsub;
-  }, [examId]);
+  }, [schoolId, assessmentId]);
 
-  const classStudents = students.filter((s) => s.classId === classId && !s.graduated);
-  const exam = exams.find((e) => e.id === examId);
+  useEffect(() => {
+    if (!compareAssessmentId) { setPreviousData({}); return; }
+    const unsub = listenAssessmentScores(schoolId, compareAssessmentId, setPreviousData);
+    return unsub;
+  }, [schoolId, compareAssessmentId]);
+
+  const classLearners = learners.filter((s) => s.classId === classId && !s.graduated);
+  const assessment = assessments.find((e) => e.id === assessmentId);
   const className = classes.find((c) => c.id === classId)?.name || "";
 
-  // Rows are automatically ranked by mean points (1st to last) and returned
-  // in that order, so both the on-screen table and generated PDFs follow it.
+  // Compute rows with stream rankings
   const rows = useMemo(() => {
-    const r = classStudents.map((s) => {
+    const r = classLearners.map((s) => {
       const subjScores = {};
       let total = 0, count = 0, totalPoints = 0;
-      subjects.forEach((sub) => {
+      learningAreas.forEach((sub) => {
         const v = data?.[s.id]?.[sub.id];
         subjScores[sub.id] = v;
         if (v !== undefined && v !== null) {
@@ -61,16 +88,15 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
           totalPoints += band ? band.points || 0 : 0;
         }
       });
-      // Mean is total marks divided by the full number of learning areas,
-      // regardless of any subject missing a score.
-      const mean = count ? total / subjects.length : null;
-      const meanPoints = count ? totalPoints / subjects.length : null;
-      return { student: s, subjScores, total, mean, totalPoints, meanPoints, count };
+      const mean = count ? total / (learningAreas.length || 1) : null;
+      const meanPoints = count ? totalPoints / (learningAreas.length || 1) : null;
+      return { student: s, learner: s, subjScores, total, mean, totalPoints, meanPoints, count };
     });
 
     const ranked = [...r].filter((x) => x.meanPoints !== null).sort((a, b) => b.meanPoints - a.meanPoints);
     r.forEach((x) => {
-      x.rank = x.meanPoints === null ? "—" : ranked.findIndex((y) => y.student.id === x.student.id) + 1;
+      x.streamRank = x.meanPoints === null ? null : ranked.findIndex((y) => y.student.id === x.student.id) + 1;
+      x.rank = x.streamRank || "—";
     });
 
     return [...r].sort((a, b) => {
@@ -78,13 +104,42 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
       const rb = b.rank === "—" ? Infinity : b.rank;
       return ra - rb;
     });
-  }, [data, classStudents, subjects, bands]);
+  }, [data, classLearners, learningAreas, bands]);
+
+  // Compute grade rankings for deviation tracking
+  const analysis = useMemo(() => {
+    if (!assessmentId || Object.keys(data).length === 0) return null;
+    return computeAnalysis({ examScores: data, classes, students: learners, subjects: learningAreas, bands });
+  }, [assessmentId, data, classes, learners, learningAreas, bands]);
+
+  const rowsWithGradeRank = useMemo(() => {
+    if (!analysis) return rows;
+    const grade = getGradeForClass(classes.find((c) => c.id === classId));
+    const gradeSheet = analysis.gradeMarkSheets[grade] || [];
+    return rows.map((r) => {
+      const match = gradeSheet.find((g) => g.student?.id === r.student?.id);
+      return { ...r, gradeRank: match?.gradeRank || null };
+    });
+  }, [rows, analysis, classes, classId]);
+
+  // Compute deviations
+  const deviations = useMemo(() => {
+    if (!compareAssessmentId || Object.keys(previousData).length === 0) return {};
+    return computeAssessmentDeviations({
+      currentRows: rowsWithGradeRank,
+      previousScores: previousData,
+      classes,
+      learners,
+      learningAreas,
+      bands,
+    });
+  }, [compareAssessmentId, previousData, rowsWithGradeRank, classes, learners, learningAreas, bands]);
 
   const CELL = 58;
 
   const buildSubjectTeachers = (forClassId) => {
     const map = {};
-    subjects.forEach((s) => {
+    learningAreas.forEach((s) => {
       const t = teachers?.find(
         (t) => t.role === "Subject Teacher" && t.subjectId === s.id && t.classId === forClassId
       );
@@ -93,47 +148,99 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
     return map;
   };
 
-  // ---------- Class / stream score sheet (single exam) ----------
+  // Deviation indicator component
+  const DeviationIndicator = ({ value, isRank }) => {
+    if (value === null || value === undefined) return <Text style={styles.deviationText}>—</Text>;
+    const diff = Number(value);
+    if (diff === 0) return <Text style={styles.deviationText}>—</Text>;
+
+    // For ranks, positive means improvement (went from rank 5 to rank 2 = +3)
+    const isImprovement = isRank ? diff > 0 : diff > 0;
+    const color = isImprovement ? '#27AE60' : '#E74C3C';
+    const arrow = isImprovement ? '↑' : '↓';
+
+    return (
+      <Text style={[styles.deviationText, { color, fontWeight: '700' }]}>
+        {arrow} {Math.abs(diff).toFixed(1)}
+      </Text>
+    );
+  };
+
+  // ---------- Class / stream score sheet (single assessment) ----------
   const handleGenerateClassReport = async () => {
-    if (rows.length === 0) return;
+    if (rowsWithGradeRank.length === 0) return;
     setGenerating("class");
     try {
-      const html = buildClassReportHtml({ meta, exam, className, subjects, rows, bands });
-      await generateAndSharePdf(html, "Class List");
+      const html = buildClassReportHtml({
+        meta,
+        exam: assessment,
+        assessment,
+        className,
+        subjects: learningAreas,
+        learningAreas,
+        rows: rowsWithGradeRank,
+        bands,
+        deviations: compareAssessmentId ? deviations : null,
+        previousAssessment: compareAssessmentId ? assessments.find((a) => a.id === compareAssessmentId) : null,
+      });
+      await generateAndSharePdf(html, "Class Assessment Report");
     } catch (e) {
       Alert.alert("Couldn't generate PDF", e?.message || "Something went wrong. Try again.");
     }
     setGenerating("");
   };
 
+  const handleDownloadClassReport = async () => {
+    if (rowsWithGradeRank.length === 0) return;
+    setGenerating("classDownload");
+    try {
+      const html = buildClassReportHtml({
+        meta,
+        exam: assessment,
+        assessment,
+        className,
+        subjects: learningAreas,
+        learningAreas,
+        rows: rowsWithGradeRank,
+        bands,
+        deviations: compareAssessmentId ? deviations : null,
+        previousAssessment: compareAssessmentId ? assessments.find((a) => a.id === compareAssessmentId) : null,
+      });
+      await generateAndDownloadPdf(html, `${className}_Assessment_Report`);
+    } catch (e) {
+      Alert.alert("Couldn't download PDF", e?.message || "Something went wrong. Try again.");
+    }
+    setGenerating("");
+  };
+
   // ---------- Report cards: every assessment in the whole term + average ----------
   const handleGenerateReportCards = async () => {
-    if (!termKey || !cardClassId || examsForCardClass.length === 0) return;
+    if (!termKey || !cardClassId || assessmentsForCardClass.length === 0) return;
     setGeneratingCards(true);
     try {
-      const examIds = examsForCardClass.map((e) => e.id);
-      const scoresByExam = await getScoresForExams(examIds);
-      const { avgScores, perExamScores } = buildTermAverageScores(examIds, scoresByExam, students, subjects);
+      const examIds = assessmentsForCardClass.map((e) => e.id);
+      const scoresByExam = await getScoresForAssessments(schoolId, examIds);
+      const { avgScores, perExamScores } = buildTermAverageScores(examIds, scoresByExam, learners, learningAreas);
 
-      const analysis = computeAnalysis({ examScores: avgScores, classes, students, subjects, bands });
+      const cardAnalysis = computeAnalysis({ examScores: avgScores, classes, students: learners, subjects: learningAreas, bands });
       const grade = getGradeForClass(classes.find((c) => c.id === cardClassId));
-      const gradeSheet = analysis.gradeMarkSheets[grade] || [];
+      const gradeSheet = cardAnalysis.gradeMarkSheets[grade] || [];
 
-      let classRows = analysis.rows
+      let classRows = cardAnalysis.rows
         .filter((r) => r.classObj?.id === cardClassId)
         .map((r) => {
-          const match = gradeSheet.find((g) => g.student.id === r.student.id);
+          const match = gradeSheet.find((g) => g.student?.id === r.student?.id);
           return {
             ...r,
             gradeRank: match?.gradeRank ?? "—",
             gradeTotal: gradeSheet.length,
-            perExamScores: perExamScores[r.student.id],
+            perExamScores: perExamScores[r.student?.id],
           };
         });
 
       const streamRanked = [...classRows].filter((r) => r.meanPoints !== null).sort((a, b) => b.meanPoints - a.meanPoints);
       classRows.forEach((r) => {
-        r.rank = r.meanPoints === null ? "—" : streamRanked.findIndex((x) => x.student.id === r.student.id) + 1;
+        r.rank = r.meanPoints === null ? "—" : streamRanked.findIndex((x) => x.student?.id === r.student?.id) + 1;
       });
       classRows = classRows.sort((a, b) => {
         const ra = a.rank === "—" ? Infinity : a.rank;
@@ -153,7 +260,15 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
       const subjectTeachers = buildSubjectTeachers(cardClassId);
 
       const html = buildStudentReportCardsHtml({
-        meta, examsInTerm: examsForCardClass, termLabel, className: cardClassName, subjects, rows: classRows, bands,
+        meta,
+        examsInTerm: assessmentsForCardClass,
+        assessmentsInTerm: assessmentsForCardClass,
+        termLabel,
+        className: cardClassName,
+        subjects: learningAreas,
+        learningAreas,
+        rows: classRows,
+        bands,
         classTeacherName: classTeacher?.name || "",
         headTeacherName: headTeacher?.name || "",
         subjectTeachers,
@@ -165,19 +280,85 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
     setGeneratingCards(false);
   };
 
-  // ---------- Combined streams ranked list (one exam, any chosen streams) ----------
+  const handleDownloadReportCards = async () => {
+    if (!termKey || !cardClassId || assessmentsForCardClass.length === 0) return;
+    setGeneratingCards(true);
+    try {
+      const examIds = assessmentsForCardClass.map((e) => e.id);
+      const scoresByExam = await getScoresForAssessments(schoolId, examIds);
+      const { avgScores, perExamScores } = buildTermAverageScores(examIds, scoresByExam, learners, learningAreas);
+
+      const cardAnalysis = computeAnalysis({ examScores: avgScores, classes, students: learners, subjects: learningAreas, bands });
+      const grade = getGradeForClass(classes.find((c) => c.id === cardClassId));
+      const gradeSheet = cardAnalysis.gradeMarkSheets[grade] || [];
+
+      let classRows = cardAnalysis.rows
+        .filter((r) => r.classObj?.id === cardClassId)
+        .map((r) => {
+          const match = gradeSheet.find((g) => g.student?.id === r.student?.id);
+          return {
+            ...r,
+            gradeRank: match?.gradeRank ?? "—",
+            gradeTotal: gradeSheet.length,
+            perExamScores: perExamScores[r.student?.id],
+          };
+        });
+
+      const streamRanked = [...classRows].filter((r) => r.meanPoints !== null).sort((a, b) => b.meanPoints - a.meanPoints);
+      classRows.forEach((r) => {
+        r.rank = r.meanPoints === null ? "—" : streamRanked.findIndex((x) => x.student?.id === r.student?.id) + 1;
+      });
+      classRows = classRows.sort((a, b) => {
+        const ra = a.rank === "—" ? Infinity : a.rank;
+        const rb = b.rank === "—" ? Infinity : b.rank;
+        return ra - rb;
+      });
+
+      if (classRows.length === 0) {
+        Alert.alert("No scores yet", "No scores have been recorded for this class in this term.");
+        setGeneratingCards(false);
+        return;
+      }
+
+      const cardClassName = classes.find((c) => c.id === cardClassId)?.name || "";
+      const classTeacher = teachers?.find((t) => t.role === "Class Teacher" && t.classId === cardClassId);
+      const headTeacher = teachers?.find((t) => t.role === "Head Teacher");
+      const subjectTeachers = buildSubjectTeachers(cardClassId);
+
+      const html = buildStudentReportCardsHtml({
+        meta,
+        examsInTerm: assessmentsForCardClass,
+        assessmentsInTerm: assessmentsForCardClass,
+        termLabel,
+        className: cardClassName,
+        subjects: learningAreas,
+        learningAreas,
+        rows: classRows,
+        bands,
+        classTeacherName: classTeacher?.name || "",
+        headTeacherName: headTeacher?.name || "",
+        subjectTeachers,
+      });
+      await generateAndDownloadPdf(html, `${cardClassName}_Report_Cards`);
+    } catch (e) {
+      Alert.alert("Couldn't download PDF", e?.message || "Something went wrong. Try again.");
+    }
+    setGeneratingCards(false);
+  };
+
+  // ---------- Combined streams ranked list (one assessment, any chosen streams) ----------
   const toggleStream = (id) => {
     setSelectedStreamIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
   const handleGenerateCombined = async () => {
-    if (!examId || selectedStreamIds.length === 0) return;
+    if (!assessmentId || selectedStreamIds.length === 0) return;
     setGeneratingCombined(true);
     try {
-      const analysis = computeAnalysis({ examScores: data, classes, students, subjects, bands });
-      const combined = analysis.rows.filter((r) => selectedStreamIds.includes(r.classObj?.id));
+      const combAnalysis = computeAnalysis({ examScores: data, classes, students: learners, subjects: learningAreas, bands });
+      const combined = combAnalysis.rows.filter((r) => selectedStreamIds.includes(r.classObj?.id));
       if (combined.length === 0) {
-        Alert.alert("No scores yet", "No scores have been recorded for the selected streams in this exam.");
+        Alert.alert("No scores yet", "No scores have been recorded for the selected streams in this assessment.");
         setGeneratingCombined(false);
         return;
       }
@@ -189,7 +370,16 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
         .filter(Boolean)
         .join(" & ");
 
-      const html = buildCombinedStreamsHtml({ meta, exam, label, subjects, bands, rows: ranked });
+      const html = buildCombinedStreamsHtml({
+        meta,
+        exam: assessment,
+        assessment,
+        label,
+        subjects: learningAreas,
+        learningAreas,
+        bands,
+        rows: ranked
+      });
       await generateAndSharePdf(html, `${label} combined list`);
     } catch (e) {
       Alert.alert("Couldn't generate PDF", e?.message || "Something went wrong. Try again.");
@@ -197,8 +387,54 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
     setGeneratingCombined(false);
   };
 
+  const handleDownloadCombined = async () => {
+    if (!assessmentId || selectedStreamIds.length === 0) return;
+    setGeneratingCombined(true);
+    try {
+      const combAnalysis = computeAnalysis({ examScores: data, classes, students: learners, subjects: learningAreas, bands });
+      const combined = combAnalysis.rows.filter((r) => selectedStreamIds.includes(r.classObj?.id));
+      if (combined.length === 0) {
+        Alert.alert("No scores yet", "No scores have been recorded for the selected streams in this assessment.");
+        setGeneratingCombined(false);
+        return;
+      }
+      const ranked = [...combined].sort((a, b) => (b.meanPoints ?? -1) - (a.meanPoints ?? -1));
+      ranked.forEach((r, i) => { r.combinedRank = i + 1; });
+
+      const label = selectedStreamIds
+        .map((id) => classes.find((c) => c.id === id)?.name)
+        .filter(Boolean)
+        .join(" & ");
+
+      const html = buildCombinedStreamsHtml({
+        meta,
+        exam: assessment,
+        assessment,
+        label,
+        subjects: learningAreas,
+        learningAreas,
+        bands,
+        rows: ranked
+      });
+      await generateAndDownloadPdf(html, `${label.replace(/ & /g, "_")}_Combined`);
+    } catch (e) {
+      Alert.alert("Couldn't download PDF", e?.message || "Something went wrong. Try again.");
+    }
+    setGeneratingCombined(false);
+  };
+
+  const previousAssessmentLabel = compareAssessmentId
+    ? assessments.find((a) => a.id === compareAssessmentId)?.name
+    : "";
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 14 }}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={{ padding: 14 }}
+      removeClippedSubviews={true}
+      maxToRenderPerBatch={5}
+      windowSize={5}
+    >
       <Text style={styles.sectionLabel}>Term</Text>
       <View style={styles.pickerWrap}>
         <Picker selectedValue={termKey} onValueChange={setTermKey}>
@@ -207,42 +443,83 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
         </Picker>
       </View>
 
-      {!termKey && <Text style={styles.hint}>Choose a term to generate reports.</Text>}
+      {!termKey && <Text style={styles.hint}>Choose a term to generate assessment reports.</Text>}
 
       {termKey && (
         <>
           {/* ---------- Report cards ---------- */}
           <Text style={styles.sectionLabel}>Report cards</Text>
-          <Text style={styles.hintSmall}>Includes every assessment recorded this term for the class, plus an average per subject.</Text>
+          <Text style={styles.hintSmall}>Includes every assessment recorded this term for the class, plus an average per learning area.</Text>
           <View style={styles.pickerWrap}>
             <Picker selectedValue={cardClassId} onValueChange={setCardClassId}>
               <Picker.Item label="Select class" value="" />
               {classes.map((c) => <Picker.Item key={c.id} label={c.name} value={c.id} />)}
             </Picker>
           </View>
-          <TouchableOpacity
-            style={[styles.pdfBtn, { marginBottom: 6 }, (!cardClassId || examsForCardClass.length === 0) && styles.pdfBtnDisabled]}
-            onPress={handleGenerateReportCards}
-            disabled={!cardClassId || examsForCardClass.length === 0 || generatingCards}
-          >
-            {generatingCards ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.pdfBtnText}>Report cards (PDF)</Text>}
-          </TouchableOpacity>
-          {cardClassId && examsForCardClass.length === 0 && (
-            <Text style={[styles.hintSmall, { marginBottom: 16 }]}>No exams found for {cardClassGrade} in this term yet — add one in Setup → Exams.</Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 6 }}>
+            <TouchableOpacity
+              style={[styles.pdfBtn, { flex: 1 }, (!cardClassId || assessmentsForCardClass.length === 0) && styles.pdfBtnDisabled]}
+              onPress={handleDownloadReportCards}
+              disabled={!cardClassId || assessmentsForCardClass.length === 0 || generatingCards}
+            >
+              {generatingCards ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.pdfBtnText}>⬇ Download Cards</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.pdfBtn, { flex: 1 }, (!cardClassId || assessmentsForCardClass.length === 0) && styles.pdfBtnDisabled]}
+              onPress={handleGenerateReportCards}
+              disabled={!cardClassId || assessmentsForCardClass.length === 0 || generatingCards}
+            >
+              {generatingCards ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.pdfBtnText}>📤 Share Cards</Text>}
+            </TouchableOpacity>
+          </View>
+          {cardClassId && assessmentsForCardClass.length === 0 && (
+            <Text style={[styles.hintSmall, { marginBottom: 16 }]}>No assessments found for {cardClassGrade} in this term yet — add one in Setup → Assessments.</Text>
           )}
-          {(!cardClassId || examsForCardClass.length > 0) && <View style={{ marginBottom: 16 }} />}
+          {(!cardClassId || assessmentsForCardClass.length > 0) && <View style={{ marginBottom: 16 }} />}
 
-          {/* ---------- Exam picker shared by the two exam-specific sections below ---------- */}
-          <Text style={styles.sectionLabel}>Exam (for the reports below)</Text>
+          {/* ---------- Assessment picker shared by the sections below ---------- */}
+          <Text style={styles.sectionLabel}>Assessment (for the reports below)</Text>
           <View style={styles.pickerWrap}>
-            <Picker selectedValue={examId} onValueChange={setExamId}>
-              <Picker.Item label="Select exam" value="" />
-              {examsInTerm.map((e) => <Picker.Item key={e.id} label={`${e.name} (${e.grade || "All Grades"})`} value={e.id} />)}
+            <Picker selectedValue={assessmentId} onValueChange={setAssessmentId}>
+              <Picker.Item label="Select assessment" value="" />
+              {assessmentsInTerm.map((e) => (
+                <Picker.Item
+                  key={e.id}
+                  label={`${e.name}${e.sequence ? ` (${e.sequence}${getOrdinalSuffix(e.sequence)})` : ""} (${e.grade || "All Grades"})`}
+                  value={e.id}
+                />
+              ))}
             </Picker>
           </View>
 
+          {/* ---------- Compare with previous assessment ---------- */}
+          {assessmentId && (
+            <>
+              <Text style={styles.sectionLabel}>Compare with previous (optional)</Text>
+              <Text style={styles.hintSmall}>
+                {suggestedPreviousAssessment
+                  ? `Auto-selected: ${suggestedPreviousAssessment.name}. Change below or clear to hide deviations.`
+                  : "Select a previous assessment to show improvement/decline indicators (green ↑ / red ↓)."}
+              </Text>
+              <View style={styles.pickerWrap}>
+                <Picker selectedValue={compareAssessmentId} onValueChange={setCompareAssessmentId}>
+                  <Picker.Item label="No comparison" value="" />
+                  {assessments
+                    .filter((a) => a.id !== assessmentId && a.term === currentAssessment?.term && a.year === currentAssessment?.year)
+                    .map((e) => (
+                      <Picker.Item
+                        key={e.id}
+                        label={`${e.name}${e.sequence ? ` (${e.sequence}${getOrdinalSuffix(e.sequence)})` : ""}`}
+                        value={e.id}
+                      />
+                    ))}
+                </Picker>
+              </View>
+            </>
+          )}
+
           {/* ---------- Class / stream score sheet ---------- */}
-          <Text style={styles.sectionLabel}>Class List</Text>
+          <Text style={styles.sectionLabel}>Class Assessment Report</Text>
           <View style={styles.pickerWrap}>
             <Picker selectedValue={classId} onValueChange={setClassId}>
               <Picker.Item label="Select class" value="" />
@@ -250,13 +527,26 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
             </Picker>
           </View>
 
-          {examId && classId && rows.length > 0 && (
-            <TouchableOpacity style={[styles.pdfBtn, { marginBottom: 14 }]} onPress={handleGenerateClassReport} disabled={!!generating}>
-              {generating === "class" ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.pdfBtnText}>Class List (PDF)</Text>}
-            </TouchableOpacity>
+          {assessmentId && classId && rowsWithGradeRank.length > 0 && (
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+              <TouchableOpacity
+                style={[styles.pdfBtn, { flex: 1 }]}
+                onPress={handleDownloadClassReport}
+                disabled={!!generating}
+              >
+                {generating === "classDownload" ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.pdfBtnText}>⬇ Download Report</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.pdfBtn, { flex: 1 }]}
+                onPress={handleGenerateClassReport}
+                disabled={!!generating}
+              >
+                {generating === "class" ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.pdfBtnText}>📤 Share Report</Text>}
+              </TouchableOpacity>
+            </View>
           )}
 
-          {examId && classId && (
+          {assessmentId && classId && (
             <>
               <View style={styles.legend}>
                 {bands.map((b) => (
@@ -266,39 +556,77 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
                   </View>
                 ))}
               </View>
+              {compareAssessmentId && (
+                <Text style={styles.hintSmall}>
+                  Showing deviations from {previousAssessmentLabel}. Green ↑ = improvement, Red ↓ = decline.
+                </Text>
+              )}
               <ScrollView horizontal>
                 <View>
                   <View style={styles.headerRow}>
                     <Text style={[styles.th, { width: 32 }]}>Rank</Text>
-                    <Text style={[styles.th, { width: 130 }]}>Student</Text>
-                    {subjects.map((s) => <Text key={s.id} style={[styles.th, { width: CELL, textAlign: "center" }]}>{s.code}</Text>)}
+                    <Text style={[styles.th, { width: 130 }]}>Learner</Text>
+                    {learningAreas.map((s) => <Text key={s.id} style={[styles.th, { width: CELL, textAlign: "center" }]}>{s.code}</Text>)}
                     <Text style={[styles.th, { width: CELL, textAlign: "center" }]}>Total</Text>
                     <Text style={[styles.th, { width: CELL, textAlign: "center" }]}>Mean%</Text>
                     <Text style={[styles.th, { width: CELL, textAlign: "center" }]}>Mean Pts</Text>
+                    <Text style={[styles.th, { width: 52, textAlign: "center" }]}>S.Rank</Text>
+                    <Text style={[styles.th, { width: 52, textAlign: "center" }]}>G.Rank</Text>
                   </View>
                   <ScrollView>
-                    {rows.map((r) => (
-                      <View key={r.student.id} style={styles.dataRow}>
-                        <Text style={[styles.td, { width: 32, textAlign: "center", fontWeight: "700" }]}>{r.rank}</Text>
-                        <Text style={[styles.td, { width: 130, fontWeight: "600" }]} numberOfLines={1}>{r.student.name}</Text>
-                        {subjects.map((s) => {
-                          const v = r.subjScores[s.id];
-                          const band = getBand(v, bands);
-                          return (
-                            <Text
-                              key={s.id}
-                              style={[styles.td, { width: CELL, textAlign: "center", backgroundColor: band ? band.color + "33" : undefined, color: COLORS.ink, fontWeight: band ? "700" : "400" }]}
-                            >
-                              {v === undefined || v === null ? "—" : v}
+                    {rowsWithGradeRank.map((r) => {
+                      const dev = deviations[r.student?.id];
+                      return (
+                        <View key={r.student.id} style={styles.dataRow}>
+                          <Text style={[styles.td, { width: 32, textAlign: "center", fontWeight: "700" }]}>{r.rank}</Text>
+                          <Text style={[styles.td, { width: 130, fontWeight: "600" }]} numberOfLines={1}>{r.student.name}</Text>
+                          {learningAreas.map((s) => {
+                            const v = r.subjScores[s.id];
+                            const band = getBand(v, bands);
+                            const deviation = dev?.learningAreas?.[s.id];
+                            return (
+                              <View key={s.id} style={{ width: CELL, alignItems: 'center', justifyContent: 'center', backgroundColor: band ? band.color + "33" : undefined }}>
+                                <Text style={[styles.td, { textAlign: "center", color: COLORS.ink, fontWeight: band ? "700" : "400", padding: 4 }]}>
+                                  {v === undefined || v === null ? "—" : v}
+                                </Text>
+                                {compareAssessmentId && deviation !== undefined && deviation !== null && (
+                                  <DeviationIndicator value={deviation} isRank={false} />
+                                )}
+                              </View>
+                            );
+                          })}
+                          <View style={{ width: CELL, alignItems: 'center', justifyContent: 'center' }}>
+                            <Text style={[styles.td, { textAlign: "center", fontWeight: "700", padding: 4 }]}>{r.total || 0}</Text>
+                            {compareAssessmentId && <DeviationIndicator value={dev?.totalMarks} isRank={false} />}
+                          </View>
+                          <View style={{ width: CELL, alignItems: 'center', justifyContent: 'center' }}>
+                            <Text style={[styles.td, { textAlign: "center", fontWeight: "700", padding: 4 }]}>
+                              {r.mean !== null ? r.mean.toFixed(1) : "—"}
                             </Text>
-                          );
-                        })}
-                        <Text style={[styles.td, { width: CELL, textAlign: "center", fontWeight: "700" }]}>{r.total || 0}</Text>
-                        <Text style={[styles.td, { width: CELL, textAlign: "center", fontWeight: "700" }]}>{r.mean !== null ? r.mean.toFixed(1) : "—"}</Text>
-                        <Text style={[styles.td, { width: CELL, textAlign: "center", fontWeight: "700" }]}>{r.meanPoints !== null ? r.meanPoints.toFixed(2) : "—"}</Text>
-                      </View>
-                    ))}
-                    {rows.length === 0 && <Text style={styles.hint}>No students in this class.</Text>}
+                            {compareAssessmentId && <DeviationIndicator value={dev?.meanPercent} isRank={false} />}
+                          </View>
+                          <View style={{ width: CELL, alignItems: 'center', justifyContent: 'center' }}>
+                            <Text style={[styles.td, { textAlign: "center", fontWeight: "700", padding: 4 }]}>
+                              {r.meanPoints !== null ? r.meanPoints.toFixed(2) : "—"}
+                            </Text>
+                            {compareAssessmentId && <DeviationIndicator value={dev?.meanPoints} isRank={false} />}
+                          </View>
+                          <View style={{ width: 52, alignItems: 'center', justifyContent: 'center' }}>
+                            <Text style={[styles.td, { textAlign: "center", fontWeight: "700", padding: 4 }]}>
+                              {r.streamRank || "—"}
+                            </Text>
+                            {compareAssessmentId && <DeviationIndicator value={dev?.streamRank} isRank={true} />}
+                          </View>
+                          <View style={{ width: 52, alignItems: 'center', justifyContent: 'center' }}>
+                            <Text style={[styles.td, { textAlign: "center", fontWeight: "700", padding: 4 }]}>
+                              {r.gradeRank || "—"}
+                            </Text>
+                            {compareAssessmentId && <DeviationIndicator value={dev?.gradeRank} isRank={true} />}
+                          </View>
+                        </View>
+                      );
+                    })}
+                    {rowsWithGradeRank.length === 0 && <Text style={styles.hint}>No learners in this class.</Text>}
                   </ScrollView>
                 </View>
               </ScrollView>
@@ -307,7 +635,7 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
 
           {/* ---------- Combined streams ranked list ---------- */}
           <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Combined streams ranked list</Text>
-          <Text style={styles.hintSmall}>Pick one or more streams (e.g. 9 Yellow, or 9 Yellow &amp; 9 Green together) for the exam selected above.</Text>
+          <Text style={styles.hintSmall}>Pick one or more streams (e.g. 9 Yellow, or 9 Yellow &amp; 9 Green together) for the assessment selected above.</Text>
           <View style={styles.streamGrid}>
             {classes.map((c) => {
               const checked = selectedStreamIds.includes(c.id);
@@ -318,13 +646,22 @@ export default function ReportsScreen({ classes, subjects, students, exams, band
               );
             })}
           </View>
-          <TouchableOpacity
-            style={[styles.pdfBtn, (!examId || selectedStreamIds.length === 0) && styles.pdfBtnDisabled]}
-            onPress={handleGenerateCombined}
-            disabled={!examId || selectedStreamIds.length === 0 || generatingCombined}
-          >
-            {generatingCombined ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.pdfBtnText}>Combined ranked list (PDF)</Text>}
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity
+              style={[styles.pdfBtn, { flex: 1 }, (!assessmentId || selectedStreamIds.length === 0) && styles.pdfBtnDisabled]}
+              onPress={handleDownloadCombined}
+              disabled={!assessmentId || selectedStreamIds.length === 0 || generatingCombined}
+            >
+              {generatingCombined ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.pdfBtnText}>⬇ Download Combined</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.pdfBtn, { flex: 1 }, (!assessmentId || selectedStreamIds.length === 0) && styles.pdfBtnDisabled]}
+              onPress={handleGenerateCombined}
+              disabled={!assessmentId || selectedStreamIds.length === 0 || generatingCombined}
+            >
+              {generatingCombined ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.pdfBtnText}>📤 Share Combined</Text>}
+            </TouchableOpacity>
+          </View>
         </>
       )}
     </ScrollView>
@@ -345,8 +682,9 @@ const styles = StyleSheet.create({
   legendText: { fontSize: 11, color: COLORS.inkSoft },
   headerRow: { flexDirection: "row", backgroundColor: COLORS.primary },
   th: { color: "#fff", fontSize: 11, fontWeight: "700", padding: 8 },
-  dataRow: { flexDirection: "row", borderBottomWidth: 1, borderColor: COLORS.border, backgroundColor: "#fff" },
+  dataRow: { flexDirection: "row", borderBottomWidth: 1, borderColor: COLORS.border, backgroundColor: "#fff", alignItems: 'center' },
   td: { fontSize: 12, padding: 8, color: COLORS.ink },
+  deviationText: { fontSize: 10, padding: 2, textAlign: 'center' },
   streamGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14 },
   streamChip: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 16, paddingVertical: 7, paddingHorizontal: 12, backgroundColor: "#fff" },
   streamChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },

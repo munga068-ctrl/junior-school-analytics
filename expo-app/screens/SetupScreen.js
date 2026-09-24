@@ -1,21 +1,21 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList, Alert } from "react-native";
 import { Picker } from "@react-native-picker/picker";
-import { COLORS } from "../utils/constants";
+import { COLORS, getOrdinalSuffix } from "../utils/constants";
 import {
-  addClass, removeClass, addSubject, removeSubject,
-  addStudent, removeStudent, bulkAddStudents, addExam, removeExam, saveBands,
-  addTeacher, removeTeacher, applyPromotions, setTeacherPassword,
+  addClass, removeClass, addLearningArea, removeLearningArea,
+  addLearner, removeLearner, bulkAddLearners, addAssessment, removeAssessment, saveBands,
+  addTeacher, removeTeacher, applyPromotions, setTeacherPassword, graduateLearner,
 } from "../utils/db";
-import { buildPromotionPlan, getStreamInitials } from "../utils/analysis";
+import { buildPromotionPlan, getStreamInitials, getGradeForClass } from "../utils/analysis";
 
-const TABS = ["Classes", "Subjects", "Students", "Exams", "Performance Levels", "Teachers", "Promotion"];
+const TABS = ["Classes", "Learning Areas", "Learners", "Assessments", "Performance Levels", "Teachers", "Graduated", "Promotion"];
 const GRADES = ["Grade 7", "Grade 8", "Grade 9"];
 const TERMS = ["1", "2", "3"];
 const TEACHER_ROLES = ["Class Teacher", "Subject Teacher", "Head Teacher"];
 const CURRENT_YEAR = new Date().getFullYear();
 
-export default function SetupScreen({ classes, subjects, students, exams, bands, teachers, isAdmin }) {
+export default function SetupScreen({ schoolId, classes, learningAreas, learners, assessments, bands, teachers, isAdmin, navigation }) {
   const [tab, setTab] = useState("Classes");
   return (
     <View style={styles.container}>
@@ -26,32 +26,40 @@ export default function SetupScreen({ classes, subjects, students, exams, bands,
           </TouchableOpacity>
         ))}
       </View>
-      {tab === "Classes" && <ClassesTab classes={classes} students={students} />}
-      {tab === "Subjects" && <SubjectsTab subjects={subjects} />}
-      {tab === "Students" && <StudentsTab classes={classes} students={students} />}
-      {tab === "Exams" && <ExamsTab exams={exams} />}
-      {tab === "Performance Levels" && <BandsTab bands={bands} />}
-      {tab === "Teachers" && <TeachersTab teachers={teachers} classes={classes} subjects={subjects} isAdmin={isAdmin} />}
-      {tab === "Promotion" && <PromotionTab classes={classes} students={students} isAdmin={isAdmin} />}
+      {tab === "Classes" && <ClassesTab schoolId={schoolId} classes={classes} learners={learners} navigation={navigation} />}
+      {tab === "Learning Areas" && <LearningAreasTab schoolId={schoolId} learningAreas={learningAreas} />}
+      {tab === "Learners" && <LearnersTab schoolId={schoolId} classes={classes} learners={learners} navigation={navigation} />}
+      {tab === "Assessments" && <AssessmentsTab schoolId={schoolId} assessments={assessments} />}
+      {tab === "Performance Levels" && <BandsTab schoolId={schoolId} bands={bands} />}
+      {tab === "Teachers" && <TeachersTab schoolId={schoolId} teachers={teachers} classes={classes} learningAreas={learningAreas} isAdmin={isAdmin} />}
+      {tab === "Graduated" && <GraduatedTab learners={learners} classes={classes} />}
+      {tab === "Promotion" && <PromotionTab schoolId={schoolId} classes={classes} learners={learners} isAdmin={isAdmin} />}
     </View>
   );
 }
 
-function Row({ left, right, onRemove }) {
+function Row({ left, right, onRemove, onPress }) {
   return (
-    <View style={styles.row}>
+    <TouchableOpacity style={styles.row} onPress={onPress} disabled={!onPress}>
       <Text style={styles.rowText}>{left}</Text>
       {right}
       {onRemove && (
         <TouchableOpacity onPress={onRemove}><Text style={styles.remove}>Remove</Text></TouchableOpacity>
       )}
-    </View>
+    </TouchableOpacity>
   );
 }
 
-function ClassesTab({ classes, students }) {
+const MemoizedRow = React.memo(Row);
+
+function ClassesTab({ schoolId, classes, learners, navigation }) {
   const [name, setName] = useState("");
   const [grade, setGrade] = useState(GRADES[0]);
+
+  const handleViewList = (classId) => {
+    navigation.navigate("ClassList", { classId });
+  };
+
   return (
     <View style={styles.section}>
       <Text style={styles.label}>Add a class / stream</Text>
@@ -64,7 +72,7 @@ function ClassesTab({ classes, students }) {
         <TextInput style={styles.input} placeholder="Stream name, e.g. Green" value={name} onChangeText={setName} />
         <TouchableOpacity
           style={styles.addBtn}
-          onPress={() => { if (name.trim()) { addClass(`${grade} ${name.trim()}`, grade); setName(""); } }}
+          onPress={() => { if (name.trim()) { addClass(schoolId, `${grade} ${name.trim()}`, grade); setName(""); } }}
         >
           <Text style={styles.addBtnText}>Add</Text>
         </TouchableOpacity>
@@ -73,15 +81,29 @@ function ClassesTab({ classes, students }) {
         data={classes}
         keyExtractor={(i) => i.id}
         renderItem={({ item }) => (
-          <Row left={`${item.name}  ·  ${students.filter((s) => s.classId === item.id && !s.graduated).length} students`} onRemove={() => removeClass(item.id)} />
+          <View style={styles.row}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowText}>{item.name}  ·  {learners.filter((s) => s.classId === item.id && !s.graduated).length} learners</Text>
+            </View>
+            <TouchableOpacity style={styles.viewListBtn} onPress={() => handleViewList(item.id)}>
+              <Text style={styles.viewListBtnText}>View List</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => removeClass(schoolId, item.id)}>
+              <Text style={styles.remove}>Remove</Text>
+            </TouchableOpacity>
+          </View>
         )}
         ListEmptyComponent={<Text style={styles.empty}>No classes yet.</Text>}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        removeClippedSubviews={true}
       />
     </View>
   );
 }
 
-function SubjectsTab({ subjects }) {
+function LearningAreasTab({ schoolId, learningAreas }) {
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   return (
@@ -89,20 +111,24 @@ function SubjectsTab({ subjects }) {
       <View style={styles.inputRow}>
         <TextInput style={[styles.input, { flex: 2 }]} placeholder="Name" value={name} onChangeText={setName} />
         <TextInput style={[styles.input, { flex: 1 }]} placeholder="Code" value={code} onChangeText={setCode} />
-        <TouchableOpacity style={styles.addBtn} onPress={() => { if (name.trim()) { addSubject(name.trim(), code.trim() || name.slice(0,3).toUpperCase()); setName(""); setCode(""); } }}>
+        <TouchableOpacity style={styles.addBtn} onPress={() => { if (name.trim()) { addLearningArea(schoolId, name.trim(), code.trim() || name.slice(0,3).toUpperCase()); setName(""); setCode(""); } }}>
           <Text style={styles.addBtnText}>Add</Text>
         </TouchableOpacity>
       </View>
       <FlatList
-        data={subjects}
+        data={learningAreas}
         keyExtractor={(i) => i.id}
-        renderItem={({ item }) => <Row left={`${item.name} (${item.code})`} onRemove={() => removeSubject(item.id)} />}
+        renderItem={({ item }) => <MemoizedRow left={`${item.name} (${item.code})`} onRemove={() => removeLearningArea(schoolId, item.id)} />}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        removeClippedSubviews={true}
       />
     </View>
   );
 }
 
-function StudentsTab({ classes, students }) {
+function LearnersTab({ schoolId, classes, learners, navigation }) {
   const [name, setName] = useState("");
   const [assessmentNo, setAssessmentNo] = useState("");
   const [classId, setClassId] = useState("");
@@ -110,9 +136,44 @@ function StudentsTab({ classes, students }) {
   const [bulkClassId, setBulkClassId] = useState("");
   const [bulkText, setBulkText] = useState("");
 
+  const activeLearners = learners.filter((l) => !l.graduated);
+
+  const handleEditLearner = (learnerId) => {
+    navigation.navigate("EditLearner", { learnerId });
+  };
+
+  const handleGraduate = (learner) => {
+    const learnerClass = classes.find((c) => c.id === learner.classId);
+    const grade = getGradeForClass(learnerClass);
+
+    if (grade !== "Grade 9") {
+      Alert.alert("Not Grade 9", "Only Grade 9 learners can be graduated.");
+      return;
+    }
+
+    Alert.alert(
+      "Graduate Learner",
+      `Mark ${learner.name} as graduated? They will be moved to the Graduated archive.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Graduate",
+          onPress: async () => {
+            try {
+              await graduateLearner(schoolId, learner.id);
+              Alert.alert("Success", `${learner.name} has been graduated`);
+            } catch (e) {
+              Alert.alert("Error", e?.message || "Could not graduate learner");
+            }
+          }
+        }
+      ]
+    );
+  };
+
   return (
     <View style={styles.section}>
-      <Text style={styles.label}>Add a student</Text>
+      <Text style={styles.label}>Add a learner</Text>
       <View style={styles.inputRow}>
         <TextInput style={[styles.input, { flex: 2 }]} placeholder="Full name" value={name} onChangeText={setName} />
         <TextInput style={[styles.input, { flex: 1 }]} placeholder="Assessment No." value={assessmentNo} onChangeText={setAssessmentNo} />
@@ -138,12 +199,12 @@ function StudentsTab({ classes, students }) {
         style={styles.addBtn}
         onPress={() => {
           if (name.trim() && classId) {
-            addStudent(name.trim(), assessmentNo.trim(), classId, gender);
+            addLearner(schoolId, name.trim(), assessmentNo.trim(), classId, gender);
             setName(""); setAssessmentNo(""); setGender("");
           }
         }}
       >
-        <Text style={styles.addBtnText}>Add student</Text>
+        <Text style={styles.addBtnText}>Add learner</Text>
       </TouchableOpacity>
 
       <Text style={[styles.label, { marginTop: 20 }]}>Bulk add (one per line: Name, Assessment No., Gender M/F)</Text>
@@ -170,39 +231,60 @@ function StudentsTab({ classes, students }) {
             const genderVal = g && /^[mf]$/i.test(g) ? g.toUpperCase() : null;
             return { name: n || line, admNo: a || "", classId: bulkClassId, gender: genderVal };
           });
-          await bulkAddStudents(rows);
+          await bulkAddLearners(schoolId, rows);
           setBulkText("");
         }}
       >
         <Text style={styles.addBtnText}>Add all</Text>
       </TouchableOpacity>
 
-      <Text style={[styles.label, { marginTop: 20 }]}>Roster ({students.filter((s) => !s.graduated).length} active, {students.filter((s) => s.graduated).length} graduated)</Text>
+      <Text style={[styles.label, { marginTop: 20 }]}>Active Learners ({activeLearners.length})</Text>
+      <Text style={styles.hintSmall}>Tap a learner to edit their details</Text>
       <FlatList
-        data={students}
+        data={activeLearners}
         keyExtractor={(i) => i.id}
-        renderItem={({ item }) => (
-          <Row
-            left={`${item.name}  ·  ${item.admNo || "—"}  ·  ${classes.find((c) => c.id === item.classId)?.name || "—"}${item.gender ? `  ·  ${item.gender}` : ""}${item.graduated ? "  ·  Graduated" : ""}`}
-            onRemove={() => removeStudent(item.id)}
-          />
-        )}
+        renderItem={({ item }) => {
+          const itemClass = classes.find((c) => c.id === item.classId);
+          const grade = getGradeForClass(itemClass);
+          const isGrade9 = grade === "Grade 9";
+
+          return (
+            <View style={styles.row}>
+              <TouchableOpacity style={{ flex: 1 }} onPress={() => handleEditLearner(item.id)}>
+                <Text style={styles.rowText}>
+                  {item.name}  ·  {item.admNo || "—"}  ·  {itemClass?.name || "—"}{item.gender ? `  ·  ${item.gender}` : ""}
+                </Text>
+              </TouchableOpacity>
+              {isGrade9 && (
+                <TouchableOpacity style={styles.graduateBtn} onPress={() => handleGraduate(item)}>
+                  <Text style={styles.graduateBtnText}>Graduate</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          );
+        }}
+        initialNumToRender={15}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        removeClippedSubviews={true}
       />
     </View>
   );
 }
 
-function ExamsTab({ exams }) {
+function AssessmentsTab({ schoolId, assessments }) {
   const [name, setName] = useState("");
   const [term, setTerm] = useState(TERMS[0]);
   const [year, setYear] = useState(String(CURRENT_YEAR));
   const [grade, setGrade] = useState("All Grades");
+  const [sequence, setSequence] = useState("1");
+
   return (
     <View style={styles.section}>
-      <Text style={styles.label}>Add an exam</Text>
+      <Text style={styles.label}>Add an assessment</Text>
       <TextInput
         style={[styles.input, { flex: 0, marginBottom: 10 }]}
-        placeholder="Exam name, e.g. Mid-Term Assessment"
+        placeholder="Assessment name, e.g. Mid-Term Assessment"
         value={name}
         onChangeText={setName}
       />
@@ -214,7 +296,15 @@ function ExamsTab({ exams }) {
         </View>
         <TextInput style={[styles.input, { flex: 1 }]} placeholder="Year" keyboardType="numeric" value={year} onChangeText={setYear} />
       </View>
-      <Text style={styles.miniLabel}>Which grade is this exam for?</Text>
+      <Text style={styles.miniLabel}>Sequence (1st, 2nd, 3rd...)</Text>
+      <TextInput
+        style={[styles.input, { flex: 0, marginBottom: 10 }]}
+        placeholder="1"
+        keyboardType="numeric"
+        value={sequence}
+        onChangeText={setSequence}
+      />
+      <Text style={styles.miniLabel}>Which grade is this assessment for?</Text>
       <View style={styles.pickerWrap}>
         <Picker selectedValue={grade} onValueChange={setGrade}>
           <Picker.Item label="All Grades" value="All Grades" />
@@ -223,26 +313,36 @@ function ExamsTab({ exams }) {
       </View>
       <TouchableOpacity
         style={styles.addBtn}
-        onPress={() => { if (name.trim()) { addExam(name.trim(), term, Number(year) || CURRENT_YEAR, grade); setName(""); } }}
+        onPress={() => {
+          if (name.trim()) {
+            addAssessment(schoolId, name.trim(), term, Number(year) || CURRENT_YEAR, grade, Number(sequence) || 1);
+            setName("");
+            setSequence("1");
+          }
+        }}
       >
-        <Text style={styles.addBtnText}>Add exam</Text>
+        <Text style={styles.addBtnText}>Add assessment</Text>
       </TouchableOpacity>
       <FlatList
-        data={exams}
+        data={assessments}
         keyExtractor={(i) => i.id}
         renderItem={({ item }) => (
-          <Row
-            left={`${item.name}${item.term ? `  ·  Term ${item.term}` : ""}${item.year ? `  ·  ${item.year}` : ""}  ·  ${item.grade || "All Grades"}`}
-            onRemove={() => removeExam(item.id)}
+          <MemoizedRow
+            left={`${item.name}${item.sequence ? ` (${item.sequence}${getOrdinalSuffix(item.sequence)})` : ""}${item.term ? `  ·  Term ${item.term}` : ""}${item.year ? `  ·  ${item.year}` : ""}  ·  ${item.grade || "All Grades"}`}
+            onRemove={() => removeAssessment(schoolId, item.id)}
           />
         )}
-        ListEmptyComponent={<Text style={styles.empty}>No exams yet.</Text>}
+        ListEmptyComponent={<Text style={styles.empty}>No assessments yet.</Text>}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        removeClippedSubviews={true}
       />
     </View>
   );
 }
 
-function BandsTab({ bands }) {
+function BandsTab({ schoolId, bands }) {
   const [local, setLocal] = useState(bands);
   useEffect(() => { setLocal(bands); }, [bands]);
   return (
@@ -286,14 +386,14 @@ function BandsTab({ bands }) {
           </View>
         </View>
       ))}
-      <TouchableOpacity style={styles.addBtn} onPress={() => saveBands(local)}>
+      <TouchableOpacity style={styles.addBtn} onPress={() => saveBands(schoolId, local)}>
         <Text style={styles.addBtnText}>Save performance levels</Text>
       </TouchableOpacity>
     </View>
   );
 }
 
-function TeachersTab({ teachers, classes, subjects, isAdmin }) {
+function TeachersTab({ schoolId, teachers, classes, learningAreas, isAdmin }) {
   const [name, setName] = useState("");
   const [role, setRole] = useState(TEACHER_ROLES[0]);
   const [classId, setClassId] = useState("");
@@ -306,8 +406,6 @@ function TeachersTab({ teachers, classes, subjects, isAdmin }) {
     .filter((t) => t.role !== "Subject Teacher")
     .sort((a, b) => (roleOrder[a.role] ?? 9) - (roleOrder[b.role] ?? 9) || (a.name || "").localeCompare(b.name || ""));
 
-  // Group subject-teacher records by (name, subject) so "Mathematics, 8Y and
-  // 8G" shows as one row instead of two.
   const subjectGroups = [];
   teachers
     .filter((t) => t.role === "Subject Teacher")
@@ -329,13 +427,14 @@ function TeachersTab({ teachers, classes, subjects, isAdmin }) {
     setSaving(true);
     try {
       const ref = await addTeacher(
+        schoolId,
         name.trim(),
         role,
         role === "Class Teacher" || role === "Subject Teacher" ? classId : null,
         role === "Subject Teacher" ? subjectId : null
       );
       if (password.trim()) {
-        await setTeacherPassword(ref.id, name.trim(), password.trim(), teachers);
+        await setTeacherPassword(schoolId, ref.id, name.trim(), password.trim(), teachers);
       }
       resetForm();
     } catch (e) {
@@ -371,7 +470,7 @@ function TeachersTab({ teachers, classes, subjects, isAdmin }) {
               <View style={styles.pickerWrap}>
                 <Picker selectedValue={subjectId} onValueChange={setSubjectId}>
                   <Picker.Item label="Select learning area" value="" />
-                  {subjects.map((s) => <Picker.Item key={s.id} label={s.name} value={s.id} />)}
+                  {learningAreas.map((s) => <Picker.Item key={s.id} label={s.name} value={s.id} />)}
                 </Picker>
               </View>
               <View style={styles.pickerWrap}>
@@ -407,7 +506,7 @@ function TeachersTab({ teachers, classes, subjects, isAdmin }) {
             <Row
               key={item.id}
               left={`${item.name}  ·  ${item.role}${item.classId ? `  ·  ${classes.find((c) => c.id === item.classId)?.name || ""}` : ""}${item.loginEmail ? "  ·  Has login" : ""}`}
-              onRemove={isAdmin ? () => removeTeacher(item.id) : undefined}
+              onRemove={isAdmin ? () => removeTeacher(schoolId, item.id) : undefined}
             />
           ))}
         </View>
@@ -420,7 +519,7 @@ function TeachersTab({ teachers, classes, subjects, isAdmin }) {
           <Text style={[styles.tableTh, { flex: 1, textAlign: "center" }]}>GRADE</Text>
         </View>
         {subjectGroups.map((g) => {
-          const subject = subjects.find((s) => s.id === g.subjectId);
+          const subject = learningAreas.find((s) => s.id === g.subjectId);
           const gradeLabel = g.classIds
             .map((cid) => getStreamInitials(classes.find((c) => c.id === cid)))
             .filter(Boolean)
@@ -439,15 +538,71 @@ function TeachersTab({ teachers, classes, subjects, isAdmin }) {
   );
 }
 
-function PromotionTab({ classes, students, isAdmin }) {
+function GraduatedTab({ learners, classes }) {
+  const [filterYear, setFilterYear] = useState("");
+  const [filterClassId, setFilterClassId] = useState("");
+
+  const graduatedLearners = learners.filter((l) => l.graduated);
+  const years = [...new Set(graduatedLearners.map((l) => l.graduationYear).filter(Boolean))].sort((a, b) => b - a);
+
+  let filtered = graduatedLearners;
+  if (filterYear) {
+    filtered = filtered.filter((l) => String(l.graduationYear) === filterYear);
+  }
+  if (filterClassId) {
+    filtered = filtered.filter((l) => l.classId === filterClassId);
+  }
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.label}>Graduated Learners Archive ({graduatedLearners.length})</Text>
+      <Text style={styles.hintSmall}>Learners who completed Grade 9. This is read-only historical data.</Text>
+
+      <Text style={styles.miniLabel}>Filter by graduation year</Text>
+      <View style={styles.pickerWrap}>
+        <Picker selectedValue={filterYear} onValueChange={setFilterYear}>
+          <Picker.Item label="All Years" value="" />
+          {years.map((y) => <Picker.Item key={y} label={String(y)} value={String(y)} />)}
+        </Picker>
+      </View>
+
+      <Text style={styles.miniLabel}>Filter by class</Text>
+      <View style={styles.pickerWrap}>
+        <Picker selectedValue={filterClassId} onValueChange={setFilterClassId}>
+          <Picker.Item label="All Classes" value="" />
+          {classes.map((c) => <Picker.Item key={c.id} label={c.name} value={c.id} />)}
+        </Picker>
+      </View>
+
+      <FlatList
+        data={filtered}
+        keyExtractor={(i) => i.id}
+        renderItem={({ item }) => (
+          <View style={styles.row}>
+            <Text style={styles.rowText}>
+              {item.name}  ·  {item.admNo || "—"}  ·  {classes.find((c) => c.id === item.classId)?.name || "—"}  ·  Graduated {item.graduationYear || "Unknown Year"}
+            </Text>
+          </View>
+        )}
+        ListEmptyComponent={<Text style={styles.empty}>No graduated learners found.</Text>}
+        initialNumToRender={15}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        removeClippedSubviews={true}
+      />
+    </View>
+  );
+}
+
+function PromotionTab({ schoolId, classes, learners, isAdmin }) {
   const [plan, setPlan] = useState(null);
   const [applying, setApplying] = useState(false);
   const [done, setDone] = useState(false);
 
-  const activeCount = students.filter((s) => !s.graduated).length;
+  const activeCount = learners.filter((s) => !s.graduated).length;
 
   const preview = () => {
-    setPlan(buildPromotionPlan(classes, students));
+    setPlan(buildPromotionPlan(classes, learners));
     setDone(false);
   };
 
@@ -455,7 +610,7 @@ function PromotionTab({ classes, students, isAdmin }) {
     if (!plan) return;
     setApplying(true);
     try {
-      await applyPromotions(plan.moves, plan.graduates);
+      await applyPromotions(schoolId, plan.moves, plan.graduates);
       setPlan(null);
       setDone(true);
     } catch (e) {
@@ -529,34 +684,38 @@ function PromotionTab({ classes, students, isAdmin }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg, padding: 14 },
-  tabRow: { flexDirection: "row", flexWrap: "wrap", marginBottom: 12, borderBottomWidth: 1, borderColor: COLORS.border },
-  tabBtn: { paddingVertical: 8, paddingHorizontal: 10 },
+  container: { flex: 1, backgroundColor: COLORS.bg },
+  tabRow: { flexDirection: "row", flexWrap: "wrap", marginBottom: 0, borderBottomWidth: 1, borderColor: COLORS.border, backgroundColor: "#fff", paddingHorizontal: 8 },
+  tabBtn: { paddingVertical: 10, paddingHorizontal: 8 },
   tabBtnActive: { borderBottomWidth: 2, borderColor: COLORS.accent },
-  tabText: { color: COLORS.inkSoft, fontSize: 12 },
+  tabText: { color: COLORS.inkSoft, fontSize: 11.5 },
   tabTextActive: { color: COLORS.primary, fontWeight: "700" },
-  section: { flex: 1 },
-  label: { fontWeight: "700", color: COLORS.primary, marginBottom: 8, fontSize: 13.5 },
-  inputRow: { flexDirection: "row", gap: 8, marginBottom: 10 },
-  input: { flex: 1, borderWidth: 1, borderColor: COLORS.border, borderRadius: 6, padding: 10, backgroundColor: "#fff", fontSize: 13.5 },
-  pickerWrap: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 6, backgroundColor: "#fff", marginBottom: 10 },
-  addBtn: { backgroundColor: COLORS.primary, borderRadius: 6, paddingVertical: 10, paddingHorizontal: 14, justifyContent: "center", alignItems: "center" },
-  addBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
-  row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 9, borderBottomWidth: 1, borderColor: COLORS.border },
-  rowText: { fontSize: 13.5, color: COLORS.ink, flex: 1 },
-  remove: { color: "#C0392B", fontSize: 12.5, fontWeight: "600" },
-  empty: { color: COLORS.inkSoft, fontSize: 13, paddingVertical: 10 },
-  hintSmall: { color: COLORS.inkSoft, fontSize: 12.5, marginBottom: 12 },
-  bandRow: { borderBottomWidth: 1, borderColor: COLORS.border, paddingVertical: 12 },
-  miniLabel: { fontSize: 11, color: COLORS.inkSoft, marginBottom: 3 },
-  genderRow: { flexDirection: "row", gap: 8, marginBottom: 10 },
-  genderChip: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 16, paddingVertical: 7, paddingHorizontal: 16, backgroundColor: "#fff" },
+  section: { flex: 1, padding: 12 },
+  label: { fontWeight: "700", color: COLORS.primary, marginBottom: 6, fontSize: 12 },
+  inputRow: { flexDirection: "row", gap: 6, marginBottom: 8 },
+  input: { flex: 1, borderWidth: 1, borderColor: COLORS.border, borderRadius: 6, padding: 8, backgroundColor: "#fff", fontSize: 12.5 },
+  pickerWrap: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 6, backgroundColor: "#fff", marginBottom: 8 },
+  addBtn: { backgroundColor: COLORS.primary, borderRadius: 6, paddingVertical: 8, paddingHorizontal: 12, justifyContent: "center", alignItems: "center" },
+  addBtnText: { color: "#fff", fontWeight: "700", fontSize: 12 },
+  row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8, borderBottomWidth: 1, borderColor: COLORS.border },
+  rowText: { fontSize: 12.5, color: COLORS.ink, flex: 1 },
+  remove: { color: "#C0392B", fontSize: 11.5, fontWeight: "600" },
+  empty: { color: COLORS.inkSoft, fontSize: 12, paddingVertical: 8 },
+  hintSmall: { color: COLORS.inkSoft, fontSize: 11, marginBottom: 8 },
+  bandRow: { borderBottomWidth: 1, borderColor: COLORS.border, paddingVertical: 10 },
+  miniLabel: { fontSize: 10.5, color: COLORS.inkSoft, marginBottom: 3 },
+  genderRow: { flexDirection: "row", gap: 6, marginBottom: 8 },
+  genderChip: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 16, paddingVertical: 6, paddingHorizontal: 14, backgroundColor: "#fff" },
   genderChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  genderChipText: { fontSize: 12.5, color: COLORS.ink, fontWeight: "600" },
+  genderChipText: { fontSize: 11.5, color: COLORS.ink, fontWeight: "600" },
   genderChipTextActive: { color: "#fff" },
   tableWrap: { backgroundColor: "#fff", borderWidth: 1, borderColor: COLORS.border, borderRadius: 6, overflow: "hidden" },
   tableHeaderRow: { flexDirection: "row", backgroundColor: COLORS.primary },
-  tableTh: { color: "#fff", fontSize: 10.5, fontWeight: "700", padding: 8 },
+  tableTh: { color: "#fff", fontSize: 9.5, fontWeight: "700", padding: 6 },
   tableRow: { flexDirection: "row", borderBottomWidth: 1, borderColor: COLORS.border, alignItems: "center" },
-  tableTd: { fontSize: 12, padding: 8, color: COLORS.ink },
+  tableTd: { fontSize: 11, padding: 6, color: COLORS.ink },
+  viewListBtn: { backgroundColor: COLORS.accent, paddingVertical: 5, paddingHorizontal: 8, borderRadius: 4, marginRight: 6 },
+  viewListBtnText: { color: "#fff", fontSize: 10, fontWeight: "700" },
+  graduateBtn: { backgroundColor: "#27AE60", paddingVertical: 5, paddingHorizontal: 8, borderRadius: 4, marginLeft: 6 },
+  graduateBtnText: { color: "#fff", fontSize: 10, fontWeight: "700" },
 });
