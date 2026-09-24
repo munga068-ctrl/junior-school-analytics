@@ -1,136 +1,122 @@
-import React, { useState, useEffect } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
+import React, { useState } from "react";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Linking } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../firebaseConfig";
 import { COLORS } from "../utils/constants";
-import { getPublicSchoolName, getTeacherLoginDirectory, getSetupStatus } from "../utils/db";
+import { initializeSchool, getTeacherLoginDirectory, getPublicSchoolName } from "../utils/db";
 
 const AUTH_ERROR_MESSAGES = {
-  "auth/invalid-api-key": "Firebase config error: invalid API key. Check firebaseConfig.js.",
-  "auth/api-key-not-valid": "Firebase config error: invalid API key. Check firebaseConfig.js.",
+  "auth/invalid-api-key": "Firebase config error: invalid API key.",
+  "auth/api-key-not-valid": "Firebase config error: invalid API key.",
   "auth/invalid-credential": "Wrong password, or this account doesn't exist.",
-  "auth/user-not-found": "No account found.",
-  "auth/wrong-password": "Wrong password.",
-  "auth/too-many-requests": "Too many attempts. Wait a moment and try again.",
-  "auth/network-request-failed": "Network error — check your internet connection.",
-  "auth/operation-not-allowed": "Email/Password sign-in isn't enabled for this Firebase project.",
-  "auth/invalid-email": "That doesn't look like a valid email address.",
-  "auth/email-already-in-use": "An account with that email already exists.",
+  "auth/user-not-found": "No account found with this email.",
+  "auth/wrong-password": "Wrong password. Please try again.",
+  "auth/too-many-requests": "Too many failed attempts. Please wait a moment and try again.",
+  "auth/network-request-failed": "Network error — please check your internet connection.",
+  "auth/operation-not-allowed": "Email/Password sign-in isn't enabled for this project.",
+  "auth/invalid-email": "Please enter a valid email address.",
+  "auth/email-already-in-use": "An account with that email already exists. Please sign in instead.",
+  "auth/weak-password": "Password is too weak. Please use at least 6 characters.",
 };
 
 export default function LoginScreen() {
-  // loading -> start (only if no admin exists yet) -> school -> role -> admin | teacher
-  // loading -> school (skips "start" once an admin already exists)
-  // start -> signup (create the first admin account, no school name needed)
-  const [step, setStep] = useState("loading");
+  // mode: "choice" -> "signin" | "signup" | "teacher"
+  const [mode, setMode] = useState("choice");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const [schoolNameInput, setSchoolNameInput] = useState("");
-  const [realSchoolName, setRealSchoolName] = useState("");
+  // Sign up fields
+  const [signupEmail, setSignupEmail] = useState("");
+  const [signupPassword, setSignupPassword] = useState("");
+  const [signupConfirmPassword, setSignupConfirmPassword] = useState("");
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  // Admin Sign in fields
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
 
+  // Teacher Sign in fields
+  const [teacherSchoolId, setTeacherSchoolId] = useState("");
   const [directory, setDirectory] = useState([]);
   const [teacherId, setTeacherId] = useState("");
   const [teacherPassword, setTeacherPassword] = useState("");
+  const [schoolLoaded, setSchoolLoaded] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const status = await getSetupStatus();
-        setStep(status.hasAdmin ? "school" : "start");
-      } catch {
-        setStep("school");
-      }
-    })();
-  }, []);
+  const openWhatsApp = () => {
+    Linking.openURL("https://wa.me/254112877840").catch(() => {
+      setError("Could not open WhatsApp. Please contact +254 112 877 840");
+    });
+  };
 
-  const checkSchoolName = async () => {
-    if (!schoolNameInput.trim()) {
-      setError("Enter your school's name");
+  const handleAdminSignup = async () => {
+    if (!signupEmail.trim() || !signupPassword) {
+      setError("Please enter your email and password");
+      return;
+    }
+    if (signupPassword.length < 6) {
+      setError("Password must be at least 6 characters long");
+      return;
+    }
+    if (signupPassword !== signupConfirmPassword) {
+      setError("Passwords do not match");
       return;
     }
     setError("");
     setLoading(true);
     try {
-      const name = await getPublicSchoolName();
-      setRealSchoolName(name);
-      if (!name) {
-        setError("This app hasn't had its school name set up yet — ask your admin.");
-      } else if (name.trim().toLowerCase() !== schoolNameInput.trim().toLowerCase()) {
-        setError("That doesn't match this app's school name. Check the spelling and try again.");
-      } else {
-        const list = await getTeacherLoginDirectory();
-        setDirectory(list);
-        setStep("role");
-      }
+      const userCredential = await createUserWithEmailAndPassword(auth, signupEmail.trim(), signupPassword);
+      // Initialize the school with the new admin's UID as the schoolId
+      await initializeSchool(userCredential.user.uid, signupEmail.trim());
     } catch (e) {
-      setError("Couldn't verify the school name. Check your connection and try again.");
+      setError(AUTH_ERROR_MESSAGES[e?.code] || `Couldn't create account: ${e?.message || e?.code || "unknown error"}`);
     }
     setLoading(false);
   };
 
   const handleAdminLogin = async () => {
-    if (!email.trim() || !password) {
-      setError("Enter your email and password");
+    if (!loginEmail.trim() || !loginPassword) {
+      setError("Please enter your email and password");
       return;
     }
     setError("");
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
+      await signInWithEmailAndPassword(auth, loginEmail.trim(), loginPassword);
     } catch (e) {
-      setError(AUTH_ERROR_MESSAGES[e?.code] || `Couldn't sign in (${e?.code || "unknown error"}).`);
+      setError(AUTH_ERROR_MESSAGES[e?.code] || `Couldn't sign in: ${e?.message || e?.code || "unknown error"}`);
     }
     setLoading(false);
   };
 
-  const handleAdminSignup = async () => {
-    if (!email.trim() || !password) {
-      setError("Enter an email and password");
-      return;
-    }
-    if (password.length < 6) {
-      setError("Password should be at least 6 characters");
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError("Passwords don't match");
+  const loadTeacherDirectory = async () => {
+    if (!teacherSchoolId.trim()) {
+      setError("Please enter the School ID provided by your admin");
       return;
     }
     setError("");
     setLoading(true);
     try {
-      // Re-check right before creating the account — closes the gap where
-      // two people might both load this screen before either finishes.
-      const status = await getSetupStatus();
-      if (status.hasAdmin) {
-        setStep("school");
-        setError("An admin account already exists now — please sign in instead.");
-        setLoading(false);
-        return;
+      const schoolName = await getPublicSchoolName(teacherSchoolId.trim());
+      const list = await getTeacherLoginDirectory(teacherSchoolId.trim());
+      setDirectory(list);
+      setSchoolLoaded(true);
+      if (!schoolName && list.length === 0) {
+        setError("School not found. Please verify the School ID with your administrator.");
       }
-      await createUserWithEmailAndPassword(auth, email.trim(), password);
-      // App.js's ensureAdminBootstrap runs automatically once signed in and
-      // makes this account the admin, since none exists yet.
     } catch (e) {
-      setError(AUTH_ERROR_MESSAGES[e?.code] || `Couldn't create the account (${e?.code || "unknown error"}).`);
+      setError("Could not find school. Check your connection or verify the School ID.");
     }
     setLoading(false);
   };
 
   const handleTeacherLogin = async () => {
     if (!teacherId || !teacherPassword) {
-      setError("Select your name and enter your password");
+      setError("Please select your name and enter your password");
       return;
     }
     const entry = directory.find((t) => t.teacherId === teacherId);
     if (!entry) {
-      setError("Couldn't find that account. Ask your admin to set up your login.");
+      setError("Account not found. Please ask your administrator to verify your login.");
       return;
     }
     setError("");
@@ -138,7 +124,7 @@ export default function LoginScreen() {
     try {
       await signInWithEmailAndPassword(auth, entry.loginEmail, teacherPassword);
     } catch (e) {
-      setError(AUTH_ERROR_MESSAGES[e?.code] || `Couldn't sign in (${e?.code || "unknown error"}).`);
+      setError(AUTH_ERROR_MESSAGES[e?.code] || `Couldn't sign in: ${e?.message || e?.code || "unknown error"}`);
     }
     setLoading(false);
   };
@@ -147,122 +133,167 @@ export default function LoginScreen() {
     <View style={styles.container}>
       <Text style={styles.title}>Junior School Analytics</Text>
 
-      {step === "loading" && <ActivityIndicator color={COLORS.primary} />}
-
-      {step === "start" && (
+      {mode === "choice" && (
         <>
-          <Text style={styles.subtitle}>Welcome — let's get this app set up</Text>
-          <TouchableOpacity style={styles.roleCard} onPress={() => { setError(""); setStep("signup"); }}>
-            <Text style={styles.roleCardTitle}>Create admin account</Text>
-            <Text style={styles.roleCardHint}>First time setting up this app? Start here.</Text>
+          <Text style={styles.subtitle}>Welcome! Choose an option to continue</Text>
+
+          <TouchableOpacity style={styles.roleCard} onPress={() => { setError(""); setMode("signin"); }}>
+            <Text style={styles.roleCardTitle}>Sign In as Admin</Text>
+            <Text style={styles.roleCardHint}>Sign in to manage your school's data and teachers</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.roleCard} onPress={() => { setError(""); setStep("school"); }}>
-            <Text style={styles.roleCardTitle}>Sign in</Text>
-            <Text style={styles.roleCardHint}>Already have an account? Sign in here.</Text>
+
+          <TouchableOpacity style={styles.roleCard} onPress={() => { setError(""); setMode("signup"); }}>
+            <Text style={styles.roleCardTitle}>Create New School Account</Text>
+            <Text style={styles.roleCardHint}>Set up a new isolated school workspace</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.roleCard} onPress={() => { setError(""); setMode("teacher"); setSchoolLoaded(false); }}>
+            <Text style={styles.roleCardTitle}>Teacher Sign In</Text>
+            <Text style={styles.roleCardHint}>Sign in with the password given by your school admin</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.whatsappBtn} onPress={openWhatsApp}>
+            <Text style={styles.whatsappBtnText}>💬 Need Help? Contact WhatsApp Support</Text>
           </TouchableOpacity>
         </>
       )}
 
-      {step === "signup" && (
+      {mode === "signup" && (
         <>
-          <Text style={styles.subtitle}>Create the admin account</Text>
+          <Text style={styles.subtitle}>Create Admin Account</Text>
+          <Text style={styles.hintText}>This creates a completely isolated space for your school.</Text>
+
           <TextInput
             style={styles.input}
-            placeholder="Email"
+            placeholder="Admin Email"
             autoCapitalize="none"
             keyboardType="email-address"
-            value={email}
-            onChangeText={setEmail}
+            value={signupEmail}
+            onChangeText={setSignupEmail}
           />
-          <TextInput style={styles.input} placeholder="Password" secureTextEntry value={password} onChangeText={setPassword} />
-          <TextInput style={styles.input} placeholder="Confirm password" secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} />
+          <TextInput
+            style={styles.input}
+            placeholder="Password (min 6 chars)"
+            secureTextEntry
+            value={signupPassword}
+            onChangeText={setSignupPassword}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Confirm Password"
+            secureTextEntry
+            value={signupConfirmPassword}
+            onChangeText={setSignupConfirmPassword}
+          />
+
           {!!error && <Text style={styles.error}>{error}</Text>}
+
           <TouchableOpacity style={styles.button} onPress={handleAdminSignup} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Create account</Text>}
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Create School Account</Text>}
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => { setStep("start"); setError(""); }}>
-            <Text style={styles.backLink}>Back</Text>
+
+          <TouchableOpacity onPress={() => { setMode("choice"); setError(""); }}>
+            <Text style={styles.backLink}>Back to Options</Text>
           </TouchableOpacity>
         </>
       )}
 
-      {step === "school" && (
+      {mode === "signin" && (
         <>
-          <Text style={styles.subtitle}>Enter your school's name to continue</Text>
+          <Text style={styles.subtitle}>Admin Sign In</Text>
+
           <TextInput
             style={styles.input}
-            placeholder="School name, exactly as set up by your admin"
-            value={schoolNameInput}
-            onChangeText={setSchoolNameInput}
-            autoCapitalize="words"
-          />
-          {!!error && <Text style={styles.error}>{error}</Text>}
-          <TouchableOpacity style={styles.button} onPress={checkSchoolName} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Continue</Text>}
-          </TouchableOpacity>
-        </>
-      )}
-
-      {step === "role" && (
-        <>
-          <Text style={styles.subtitle}>{realSchoolName}</Text>
-          <Text style={[styles.subtitle, { marginTop: -14 }]}>Who's signing in?</Text>
-          <TouchableOpacity style={styles.roleCard} onPress={() => { setError(""); setStep("admin"); }}>
-            <Text style={styles.roleCardTitle}>Admin</Text>
-            <Text style={styles.roleCardHint}>Sign in with your email and password</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.roleCard} onPress={() => { setError(""); setStep("teacher"); }}>
-            <Text style={styles.roleCardTitle}>Teacher</Text>
-            <Text style={styles.roleCardHint}>Sign in with the name and password your admin gave you</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => { setStep("school"); setError(""); }}>
-            <Text style={styles.backLink}>Back</Text>
-          </TouchableOpacity>
-        </>
-      )}
-
-      {step === "admin" && (
-        <>
-          <Text style={styles.subtitle}>Admin sign in</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
+            placeholder="Admin Email"
             autoCapitalize="none"
             keyboardType="email-address"
-            value={email}
-            onChangeText={setEmail}
+            value={loginEmail}
+            onChangeText={setLoginEmail}
           />
-          <TextInput style={styles.input} placeholder="Password" secureTextEntry value={password} onChangeText={setPassword} />
+          <TextInput
+            style={styles.input}
+            placeholder="Password"
+            secureTextEntry
+            value={loginPassword}
+            onChangeText={setLoginPassword}
+          />
+
           {!!error && <Text style={styles.error}>{error}</Text>}
+
           <TouchableOpacity style={styles.button} onPress={handleAdminLogin} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Sign in</Text>}
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Sign In</Text>}
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => { setStep("role"); setError(""); }}>
-            <Text style={styles.backLink}>Back</Text>
+
+          <TouchableOpacity onPress={() => { setMode("choice"); setError(""); }}>
+            <Text style={styles.backLink}>Back to Options</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={[styles.whatsappBtn, { marginTop: 24 }]} onPress={openWhatsApp}>
+            <Text style={styles.whatsappBtnText}>💬 WhatsApp Support: +254 112 877 840</Text>
           </TouchableOpacity>
         </>
       )}
 
-      {step === "teacher" && (
+      {mode === "teacher" && (
         <>
-          <Text style={styles.subtitle}>Teacher sign in</Text>
-          {directory.length === 0 ? (
-            <Text style={styles.error}>No teacher logins have been set up yet — ask your admin.</Text>
+          <Text style={styles.subtitle}>Teacher Sign In</Text>
+
+          {!schoolLoaded ? (
+            <>
+              <Text style={styles.hintText}>Enter the School ID provided by your administrator:</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="School ID"
+                autoCapitalize="none"
+                value={teacherSchoolId}
+                onChangeText={setTeacherSchoolId}
+              />
+              {!!error && <Text style={styles.error}>{error}</Text>}
+              <TouchableOpacity style={styles.button} onPress={loadTeacherDirectory} disabled={loading}>
+                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Continue</Text>}
+              </TouchableOpacity>
+            </>
           ) : (
-            <View style={styles.pickerWrap}>
-              <Picker selectedValue={teacherId} onValueChange={setTeacherId}>
-                <Picker.Item label="Select your name" value="" />
-                {directory.map((t) => <Picker.Item key={t.teacherId} label={t.name} value={t.teacherId} />)}
-              </Picker>
-            </View>
+            <>
+              {directory.length === 0 ? (
+                <Text style={styles.error}>No teacher accounts found for this school. Please ask your administrator to create your login.</Text>
+              ) : (
+                <View style={styles.pickerWrap}>
+                  <Picker selectedValue={teacherId} onValueChange={setTeacherId}>
+                    <Picker.Item label="Select your name" value="" />
+                    {directory.map((t) => (
+                      <Picker.Item key={t.teacherId} label={t.name} value={t.teacherId} />
+                    ))}
+                  </Picker>
+                </View>
+              )}
+
+              <TextInput
+                style={styles.input}
+                placeholder="Password"
+                secureTextEntry
+                value={teacherPassword}
+                onChangeText={setTeacherPassword}
+              />
+
+              {!!error && <Text style={styles.error}>{error}</Text>}
+
+              <TouchableOpacity
+                style={styles.button}
+                onPress={handleTeacherLogin}
+                disabled={loading || directory.length === 0}
+              >
+                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Sign In</Text>}
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={() => setSchoolLoaded(false)}>
+                <Text style={[styles.backLink, { color: COLORS.inkSoft }]}>Change School ID</Text>
+              </TouchableOpacity>
+            </>
           )}
-          <TextInput style={styles.input} placeholder="Password" secureTextEntry value={teacherPassword} onChangeText={setTeacherPassword} />
-          {!!error && <Text style={styles.error}>{error}</Text>}
-          <TouchableOpacity style={styles.button} onPress={handleTeacherLogin} disabled={loading || directory.length === 0}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Sign in</Text>}
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => { setStep("role"); setError(""); }}>
-            <Text style={styles.backLink}>Back</Text>
+
+          <TouchableOpacity onPress={() => { setMode("choice"); setError(""); }}>
+            <Text style={styles.backLink}>Back to Options</Text>
           </TouchableOpacity>
         </>
       )}
@@ -271,16 +302,19 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: "center", padding: 28, backgroundColor: COLORS.bg },
+  container: { flex: 1, justifyContent: "center", padding: 24, backgroundColor: COLORS.bg },
   title: { fontSize: 22, fontWeight: "700", color: COLORS.primary, marginBottom: 6, textAlign: "center" },
-  subtitle: { fontSize: 14, color: COLORS.inkSoft, marginBottom: 24, textAlign: "center" },
-  input: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 6, padding: 12, marginBottom: 12, backgroundColor: "#fff" },
+  subtitle: { fontSize: 14, color: COLORS.inkSoft, marginBottom: 20, textAlign: "center" },
+  hintText: { fontSize: 12, color: COLORS.inkSoft, marginBottom: 12, textAlign: "center" },
+  input: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 6, padding: 12, marginBottom: 12, backgroundColor: "#fff", fontSize: 14 },
   pickerWrap: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 6, backgroundColor: "#fff", marginBottom: 12 },
-  button: { backgroundColor: COLORS.primary, borderRadius: 6, padding: 14, alignItems: "center", marginTop: 6 },
+  button: { backgroundColor: COLORS.primary, borderRadius: 6, padding: 14, alignItems: "center", marginTop: 4 },
   buttonText: { color: "#fff", fontWeight: "700", fontSize: 15 },
-  error: { color: "#C0392B", marginBottom: 10, fontSize: 13 },
+  error: { color: "#C0392B", marginBottom: 10, fontSize: 13, textAlign: "center" },
   roleCard: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, padding: 16, marginBottom: 12, backgroundColor: "#fff" },
-  roleCardTitle: { fontSize: 16, fontWeight: "700", color: COLORS.primary, marginBottom: 3 },
-  roleCardHint: { fontSize: 12.5, color: COLORS.inkSoft },
+  roleCardTitle: { fontSize: 15, fontWeight: "700", color: COLORS.primary, marginBottom: 3 },
+  roleCardHint: { fontSize: 12, color: COLORS.inkSoft },
   backLink: { color: COLORS.primary, textAlign: "center", marginTop: 16, fontSize: 13.5, fontWeight: "600" },
+  whatsappBtn: { marginTop: 16, backgroundColor: "#25D366", borderRadius: 6, padding: 12, alignItems: "center" },
+  whatsappBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
 });

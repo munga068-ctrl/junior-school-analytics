@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from "react";
-import { View, ActivityIndicator } from "react-native";
+import { View, ActivityIndicator, Text, Alert } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { NavigationContainer } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 import { onAuthStateChanged } from "firebase/auth";
+import * as Updates from "expo-updates";
 
 import { auth } from "./firebaseConfig";
-import { listenClasses, listenSubjects, listenStudents, listenExams, listenBands, listenMeta, listenTeachers, listenAdmins, ensureAdminBootstrap } from "./utils/db";
+import { getUserSchoolId, listenClasses, listenLearningAreas, listenLearners, listenAssessments, listenBands, listenMeta, listenTeachers, listenAdmins, ensureAdminBootstrap } from "./utils/db";
 import { DEFAULT_BANDS, COLORS } from "./utils/constants";
 
 import LoginScreen from "./screens/LoginScreen";
@@ -17,21 +19,125 @@ import ScoreEntryScreen from "./screens/ScoreEntryScreen";
 import ReportsScreen from "./screens/ReportsScreen";
 import AnalysisScreen from "./screens/AnalysisScreen";
 import ProfileScreen from "./screens/ProfileScreen";
+import ClassListScreen from "./screens/ClassListScreen";
+import EditLearnerScreen from "./screens/EditLearnerScreen";
 
 const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
+
+function SetupStack({ schoolId, classes, learningAreas, learners, assessments, bands, teachers, isAdmin, meta }) {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen
+        name="SetupMain"
+        options={{ headerShown: false }}
+      >
+        {(props) => (
+          <SetupScreen
+            {...props}
+            schoolId={schoolId}
+            classes={classes}
+            learningAreas={learningAreas}
+            learners={learners}
+            assessments={assessments}
+            bands={bands}
+            teachers={teachers}
+            isAdmin={isAdmin}
+          />
+        )}
+      </Stack.Screen>
+      <Stack.Screen
+        name="ClassList"
+        options={{
+          headerStyle: { backgroundColor: COLORS.primary },
+          headerTintColor: "#fff",
+          title: "Class List"
+        }}
+      >
+        {(props) => (
+          <ClassListScreen
+            {...props}
+            classes={classes}
+            learners={learners}
+            meta={meta}
+          />
+        )}
+      </Stack.Screen>
+      <Stack.Screen
+        name="EditLearner"
+        options={{
+          headerStyle: { backgroundColor: COLORS.primary },
+          headerTintColor: "#fff",
+          title: "Edit Learner"
+        }}
+      >
+        {(props) => (
+          <EditLearnerScreen
+            {...props}
+            schoolId={schoolId}
+            classes={classes}
+            learners={learners}
+          />
+        )}
+      </Stack.Screen>
+    </Stack.Navigator>
+  );
+}
 
 export default function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [user, setUser] = useState(null);
+  const [schoolId, setSchoolId] = useState(null);
+  const [updateStatus, setUpdateStatus] = useState("");
 
   const [classes, setClasses] = useState([]);
-  const [subjects, setSubjects] = useState([]);
-  const [students, setStudents] = useState([]);
-  const [exams, setExams] = useState([]);
+  const [learningAreas, setLearningAreas] = useState([]);
+  const [learners, setLearners] = useState([]);
+  const [assessments, setAssessments] = useState([]);
   const [bands, setBands] = useState(DEFAULT_BANDS);
   const [meta, setMeta] = useState({ schoolName: "" });
   const [teachers, setTeachers] = useState([]);
   const [adminEmails, setAdminEmails] = useState([]);
+
+  // Check for OTA updates on app launch
+  useEffect(() => {
+    async function checkForUpdates() {
+      if (__DEV__) {
+        // Skip update checks in development
+        return;
+      }
+
+      try {
+        setUpdateStatus("Checking for updates...");
+        const update = await Updates.checkForUpdateAsync();
+
+        if (update.isAvailable) {
+          setUpdateStatus("Downloading update...");
+          await Updates.fetchUpdateAsync();
+
+          Alert.alert(
+            "Update Available",
+            "A new version has been downloaded. The app will reload to apply the update.",
+            [
+              {
+                text: "Restart Now",
+                onPress: async () => {
+                  await Updates.reloadAsync();
+                },
+              },
+            ]
+          );
+        } else {
+          setUpdateStatus("");
+        }
+      } catch (e) {
+        console.error("Error checking for updates:", e);
+        setUpdateStatus("");
+      }
+    }
+
+    checkForUpdates();
+  }, []);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -42,20 +148,39 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
-    ensureAdminBootstrap(user.email);
+    if (!user) {
+      setSchoolId(null);
+      return;
+    }
+
+    (async () => {
+      try {
+        const sid = await getUserSchoolId(user.uid);
+        setSchoolId(sid);
+        if (sid) {
+          await ensureAdminBootstrap(sid, user.email);
+        }
+      } catch (e) {
+        console.error("Error fetching schoolId:", e);
+      }
+    })();
+  }, [user]);
+
+  useEffect(() => {
+    if (!schoolId) return;
+
     const unsubs = [
-      listenClasses(setClasses),
-      listenSubjects(setSubjects),
-      listenStudents(setStudents),
-      listenExams(setExams),
-      listenBands(setBands),
-      listenMeta(setMeta),
-      listenTeachers(setTeachers),
-      listenAdmins(setAdminEmails),
+      listenClasses(schoolId, setClasses),
+      listenLearningAreas(schoolId, setLearningAreas),
+      listenLearners(schoolId, setLearners),
+      listenAssessments(schoolId, setAssessments),
+      listenBands(schoolId, setBands),
+      listenMeta(schoolId, setMeta),
+      listenTeachers(schoolId, setTeachers),
+      listenAdmins(schoolId, setAdminEmails),
     ];
     return () => unsubs.forEach((u) => u && u());
-  }, [user]);
+  }, [schoolId]);
 
   const isAdmin = !!user && adminEmails.includes(user.email);
 
@@ -76,6 +201,14 @@ export default function App() {
     );
   }
 
+  if (!schoolId) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: COLORS.bg }}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
+
   return (
     <NavigationContainer>
       <StatusBar style="dark" />
@@ -88,37 +221,38 @@ export default function App() {
             ),
           }}
         >
-          {() => <DashboardScreen classes={classes} subjects={subjects} students={students} exams={exams} teachers={teachers} meta={meta} isAdmin={isAdmin} adminEmails={adminEmails} currentEmail={user?.email} />}
+          {() => <DashboardScreen schoolId={schoolId} classes={classes} learningAreas={learningAreas} learners={learners} assessments={assessments} teachers={teachers} meta={meta} isAdmin={isAdmin} adminEmails={adminEmails} currentEmail={user?.email} />}
         </Tab.Screen>
         <Tab.Screen
           name="Setup"
           options={{
+            headerShown: false,
             tabBarIcon: ({ color, size, focused }) => (
               <Ionicons name={focused ? "settings" : "settings-outline"} size={size} color={color} />
             ),
           }}
         >
-          {() => <SetupScreen classes={classes} subjects={subjects} students={students} exams={exams} bands={bands} teachers={teachers} isAdmin={isAdmin} />}
+          {() => <SetupStack schoolId={schoolId} classes={classes} learningAreas={learningAreas} learners={learners} assessments={assessments} bands={bands} teachers={teachers} isAdmin={isAdmin} meta={meta} />}
         </Tab.Screen>
         <Tab.Screen
-          name="Score entry"
+          name="Score Entry"
           options={{
             tabBarIcon: ({ color, size, focused }) => (
               <Ionicons name={focused ? "create" : "create-outline"} size={size} color={color} />
             ),
           }}
         >
-          {() => <ScoreEntryScreen classes={classes} subjects={subjects} students={students} exams={exams} />}
+          {() => <ScoreEntryScreen schoolId={schoolId} classes={classes} learningAreas={learningAreas} learners={learners} assessments={assessments} />}
         </Tab.Screen>
         <Tab.Screen
-          name="Reports"
+          name="Assessment Report"
           options={{
             tabBarIcon: ({ color, size, focused }) => (
               <Ionicons name={focused ? "bar-chart" : "bar-chart-outline"} size={size} color={color} />
             ),
           }}
         >
-          {() => <ReportsScreen classes={classes} subjects={subjects} students={students} exams={exams} bands={bands} meta={meta} teachers={teachers} />}
+          {() => <ReportsScreen schoolId={schoolId} classes={classes} learningAreas={learningAreas} learners={learners} assessments={assessments} bands={bands} meta={meta} teachers={teachers} />}
         </Tab.Screen>
         <Tab.Screen
           name="Analysis"
@@ -128,7 +262,7 @@ export default function App() {
             ),
           }}
         >
-          {() => <AnalysisScreen classes={classes} subjects={subjects} students={students} exams={exams} bands={bands} meta={meta} />}
+          {() => <AnalysisScreen schoolId={schoolId} classes={classes} learningAreas={learningAreas} learners={learners} assessments={assessments} bands={bands} meta={meta} />}
         </Tab.Screen>
         <Tab.Screen
           name="Profile"
@@ -138,7 +272,7 @@ export default function App() {
             ),
           }}
         >
-          {() => <ProfileScreen user={user} teachers={teachers} classes={classes} subjects={subjects} isAdmin={isAdmin} />}
+          {() => <ProfileScreen user={user} teachers={teachers} classes={classes} learningAreas={learningAreas} isAdmin={isAdmin} />}
         </Tab.Screen>
       </Tab.Navigator>
     </NavigationContainer>

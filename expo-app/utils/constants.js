@@ -80,3 +80,9 @@ export function maxPointsOf(bands) {
 export function uid() {
   return Math.random().toString(36).slice(2, 9);
 }
+
+export function getOrdinalSuffix(n) {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return s[(v - 20) % 10] || s[v] || s[0];
+}

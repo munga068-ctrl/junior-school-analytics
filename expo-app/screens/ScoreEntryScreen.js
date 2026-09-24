@@ -2,57 +2,55 @@ import React, { useState, useEffect, useMemo } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import { COLORS } from "../utils/constants";
-import { listenExamScores, saveExamScores } from "../utils/db";
+import { listenAssessmentScores, saveAssessmentScores } from "../utils/db";
 import { getGradeForClass, examAppliesToGrade } from "../utils/analysis";
 
-export default function ScoreEntryScreen({ classes, subjects, students, exams }) {
-  const [examId, setExamId] = useState("");
+export default function ScoreEntryScreen({ schoolId, classes, learningAreas, learners, assessments }) {
+  const [assessmentId, setAssessmentId] = useState("");
   const [classId, setClassId] = useState("");
-  const [subjectId, setSubjectId] = useState("");
-  const [examScores, setExamScores] = useState({});
+  const [learningAreaId, setLearningAreaId] = useState("");
+  const [assessmentScores, setAssessmentScores] = useState({});
   const [local, setLocal] = useState({});
   const [saved, setSaved] = useState(false);
 
-  const classStudents = students.filter((s) => s.classId === classId && !s.graduated);
+  const classLearners = learners.filter((s) => s.classId === classId && !s.graduated);
   const selectedClass = classes.find((c) => c.id === classId);
   const classGrade = selectedClass ? getGradeForClass(selectedClass) : "";
 
-  // Only exams that actually apply to this class's grade (or apply to
+  // Only assessments that actually apply to this class's grade (or apply to
   // every grade) make sense to pick here.
-  const examsForClass = useMemo(
-    () => (classId ? exams.filter((e) => examAppliesToGrade(e, classGrade)) : exams),
-    [exams, classId, classGrade]
+  const assessmentsForClass = useMemo(
+    () => (classId ? assessments.filter((e) => examAppliesToGrade(e, classGrade)) : assessments),
+    [assessments, classId, classGrade]
   );
 
-  // If the class changes and the previously chosen exam no longer applies
-  // to it, clear the exam selection rather than silently keeping a mismatch.
+  // If the class changes and the previously chosen assessment no longer applies
+  // to it, clear the assessment selection rather than silently keeping a mismatch.
   useEffect(() => {
-    if (examId && classId && !examsForClass.some((e) => e.id === examId)) {
-      setExamId("");
+    if (assessmentId && classId && !assessmentsForClass.some((e) => e.id === assessmentId)) {
+      setAssessmentId("");
     }
-    // eslint-disable-next-line
-  }, [classId]);
+  }, [classId, assessmentId, assessmentsForClass]);
 
   useEffect(() => {
-    if (!examId) return;
-    const unsub = listenExamScores(examId, (data) => setExamScores(data));
+    if (!assessmentId || !schoolId) return;
+    const unsub = listenAssessmentScores(schoolId, assessmentId, (data) => setAssessmentScores(data));
     return unsub;
-  }, [examId]);
+  }, [schoolId, assessmentId]);
 
   useEffect(() => {
     const map = {};
-    classStudents.forEach((s) => { map[s.id] = examScores?.[s.id]?.[subjectId] ?? ""; });
+    classLearners.forEach((s) => { map[s.id] = assessmentScores?.[s.id]?.[learningAreaId] ?? ""; });
     setLocal(map);
-    // eslint-disable-next-line
-  }, [examScores, classId, subjectId]);
+  }, [assessmentScores, classId, learningAreaId, classLearners]);
 
   const save = async () => {
-    const next = { ...examScores };
-    classStudents.forEach((s) => {
+    const next = { ...assessmentScores };
+    classLearners.forEach((s) => {
       const v = local[s.id];
-      next[s.id] = { ...(next[s.id] || {}), [subjectId]: v === "" ? null : Number(v) };
+      next[s.id] = { ...(next[s.id] || {}), [learningAreaId]: v === "" ? null : Number(v) };
     });
-    await saveExamScores(examId, next);
+    await saveAssessmentScores(schoolId, assessmentId, next);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   };
@@ -66,26 +64,32 @@ export default function ScoreEntryScreen({ classes, subjects, students, exams })
         </Picker>
       </View>
       <View style={styles.pickerWrap}>
-        <Picker selectedValue={examId} onValueChange={setExamId}>
-          <Picker.Item label="Select exam" value="" />
-          {examsForClass.map((e) => <Picker.Item key={e.id} label={`${e.name}${e.term ? ` — Term ${e.term}` : ""}${e.year ? ` ${e.year}` : ""}`} value={e.id} />)}
+        <Picker selectedValue={assessmentId} onValueChange={setAssessmentId}>
+          <Picker.Item label="Select assessment" value="" />
+          {assessmentsForClass.map((e) => (
+            <Picker.Item
+              key={e.id}
+              label={`${e.name}${e.sequence ? ` (${e.sequence})` : ""}${e.term ? ` — Term ${e.term}` : ""}${e.year ? ` ${e.year}` : ""}`}
+              value={e.id}
+            />
+          ))}
         </Picker>
       </View>
       <View style={styles.pickerWrap}>
-        <Picker selectedValue={subjectId} onValueChange={setSubjectId}>
+        <Picker selectedValue={learningAreaId} onValueChange={setLearningAreaId}>
           <Picker.Item label="Select learning area" value="" />
-          {subjects.map((s) => <Picker.Item key={s.id} label={s.name} value={s.id} />)}
+          {learningAreas.map((s) => <Picker.Item key={s.id} label={s.name} value={s.id} />)}
         </Picker>
       </View>
 
-      {(!examId || !classId || !subjectId) && (
-        <Text style={styles.hint}>Choose an exam, class, and learning area to begin.</Text>
+      {(!assessmentId || !classId || !learningAreaId) && (
+        <Text style={styles.hint}>Choose an assessment, class, and learning area to begin.</Text>
       )}
 
-      {examId && classId && subjectId && (
+      {assessmentId && classId && learningAreaId && (
         <>
           <FlatList
-            data={classStudents}
+            data={classLearners}
             keyExtractor={(i) => i.id}
             renderItem={({ item, index }) => (
               <View style={styles.row}>
@@ -99,11 +103,11 @@ export default function ScoreEntryScreen({ classes, subjects, students, exams })
                 />
               </View>
             )}
-            ListEmptyComponent={<Text style={styles.hint}>No students in this class.</Text>}
+            ListEmptyComponent={<Text style={styles.hint}>No learners in this class.</Text>}
           />
-          {classStudents.length > 0 && (
+          {classLearners.length > 0 && (
             <TouchableOpacity style={styles.saveBtn} onPress={save}>
-              <Text style={styles.saveBtnText}>{saved ? "Saved" : "Save scores"}</Text>
+              <Text style={styles.saveBtnText}>{saved ? "Saved" : "Save marks"}</Text>
             </TouchableOpacity>
           )}
         </>

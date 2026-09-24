@@ -33,8 +33,8 @@ export function getStreamInitials(cls) {
 // learners graduate (flagged, not deleted, so history stays intact).
 // Streams that don't yet have a matching next-grade class are left in
 // `unresolved` so the admin can create it before promoting.
-export function buildPromotionPlan(classes, students) {
-  const activeStudents = students.filter((s) => !s.graduated);
+export function buildPromotionPlan(classes, learners) {
+  const activeLearners = learners.filter((s) => !s.graduated);
   const findTargetClass = (grade, streamPart) =>
     classes.find(
       (c) => getGradeForClass(c) === grade && getStreamPart(c).toLowerCase() === streamPart.toLowerCase()
@@ -44,7 +44,7 @@ export function buildPromotionPlan(classes, students) {
   const graduates = [];
   const unresolved = [];
 
-  activeStudents.forEach((s) => {
+  activeLearners.forEach((s) => {
     const cls = classes.find((c) => c.id === s.classId);
     const grade = getGradeForClass(cls);
     if (grade === "Grade 7" || grade === "Grade 8") {
@@ -61,18 +61,21 @@ export function buildPromotionPlan(classes, students) {
   return { moves, graduates, unresolved };
 }
 
-// Computes everything the Analysis screen and its PDF need for one exam,
+// Computes everything the Analysis screen and its PDF need for one assessment,
 // across every class/stream and grade — not scoped to a single class like
-// the Reports tab.
-export function computeAnalysis({ examScores, classes, students, subjects, bands }) {
-  const rows = students
+// the Assessment Report tab.
+export function computeAnalysis({ examScores, classes, students: learnersInput, subjects: learningAreasInput, bands }) {
+  const learners = learnersInput || [];
+  const learningAreas = learningAreasInput || [];
+
+  const rows = learners
     .filter((s) => !s.graduated)
     .map((s) => {
       const classObj = classes.find((c) => c.id === s.classId);
       const grade = getGradeForClass(classObj);
       const subjScores = {};
       let total = 0, count = 0, totalPoints = 0;
-      subjects.forEach((sub) => {
+      learningAreas.forEach((sub) => {
         const v = examScores?.[s.id]?.[sub.id];
         subjScores[sub.id] = v;
         if (v !== undefined && v !== null) {
@@ -83,17 +86,17 @@ export function computeAnalysis({ examScores, classes, students, subjects, bands
         }
       });
       // Mean is total marks divided by the full number of learning areas,
-      // regardless of any subject missing a score — a missing subject
+      // regardless of any learning area missing a score — a missing learning area
       // dilutes the average rather than being excluded from it.
-      const mean = count ? total / subjects.length : null;
-      const meanPoints = count ? totalPoints / subjects.length : null;
-      return { student: s, classObj, grade, subjScores, total, mean, meanPoints, totalPoints, count };
+      const mean = count ? total / (learningAreas.length || 1) : null;
+      const meanPoints = count ? totalPoints / (learningAreas.length || 1) : null;
+      return { student: s, learner: s, classObj, grade, subjScores, total, mean, meanPoints, totalPoints, count };
     })
     .filter((r) => r.count > 0);
 
   const gradesPresent = [...new Set(rows.map((r) => r.grade))].sort();
 
-  // General, grade-wide ranked mark sheet: every student in the grade,
+  // General, grade-wide ranked mark sheet: every learner in the grade,
   // across all its streams, ranked 1..n by mean points.
   const gradeMarkSheets = {};
   gradesPresent.forEach((g) => {
@@ -110,7 +113,7 @@ export function computeAnalysis({ examScores, classes, students, subjects, bands
       const gradeRows = rows.filter((r) => r.grade === g);
       const vals = gradeRows.map((r) => r.meanPoints).filter((v) => v !== null);
       const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
-      return { grade: g, meanPoints: avg, studentCount: gradeRows.length };
+      return { grade: g, meanPoints: avg, studentCount: gradeRows.length, learnerCount: gradeRows.length };
     })
     .sort((a, b) => b.meanPoints - a.meanPoints);
   gradeStats.forEach((g, i) => { g.rank = i + 1; });
@@ -121,23 +124,23 @@ export function computeAnalysis({ examScores, classes, students, subjects, bands
       const clsRows = rows.filter((r) => r.classObj?.id === cls.id);
       const vals = clsRows.map((r) => r.meanPoints).filter((v) => v !== null);
       const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
-      return { classId: cls.id, className: cls.name, initials: getStreamInitials(cls), grade: getGradeForClass(cls), meanPoints: avg, studentCount: clsRows.length };
+      return { classId: cls.id, className: cls.name, initials: getStreamInitials(cls), grade: getGradeForClass(cls), meanPoints: avg, studentCount: clsRows.length, learnerCount: clsRows.length };
     })
     .filter((s) => s.studentCount > 0)
     .sort((a, b) => b.meanPoints - a.meanPoints);
   streamStats.forEach((s, i) => { s.rank = i + 1; });
 
-  // Overall mean % per subject, across every included student regardless of grade —
-  // used as the baseline for deviation-from-term comparisons and to rank subjects.
+  // Overall mean % per learning area, across every included learner regardless of grade —
+  // used as the baseline for deviation-from-term comparisons and to rank learning areas.
   const subjectOverallMean = {};
-  subjects.forEach((sub) => {
+  learningAreas.forEach((sub) => {
     const vals = rows.map((r) => r.subjScores[sub.id]).filter((v) => v !== undefined && v !== null);
     subjectOverallMean[sub.id] = vals.length ? vals.reduce((a, b) => a + Number(b), 0) / vals.length : null;
   });
 
-  // Subjects ordered best-performing first — used everywhere a subject list
+  // Learning areas ordered best-performing first — used everywhere a learning area list
   // is displayed, so results read top-to-bottom by strength.
-  const subjectsRanked = [...subjects].sort((a, b) => {
+  const subjectsRanked = [...learningAreas].sort((a, b) => {
     const av = subjectOverallMean[a.id];
     const bv = subjectOverallMean[b.id];
     if (av === null && bv === null) return 0;
@@ -146,7 +149,7 @@ export function computeAnalysis({ examScores, classes, students, subjects, bands
     return bv - av;
   });
 
-  // Per-subject mean %, broken out by grade.
+  // Per-learning-area mean %, broken out by grade.
   const subjectByGrade = subjectsRanked.map((sub) => {
     const perGrade = {};
     gradesPresent.forEach((g) => {
@@ -156,13 +159,13 @@ export function computeAnalysis({ examScores, classes, students, subjects, bands
         .filter((v) => v !== undefined && v !== null);
       perGrade[g] = vals.length ? vals.reduce((a, b) => a + Number(b), 0) / vals.length : null;
     });
-    return { subject: sub, perGrade };
+    return { subject: sub, learningArea: sub, perGrade };
   });
 
   // Grade columns ordered best-performing first, for display.
   const gradesPresentRanked = gradeStats.map((g) => g.grade);
 
-  // How many learners land in each performance level, per subject (ranked order).
+  // How many learners land in each performance level, per learning area (ranked order).
   const subjectLevelCounts = subjectsRanked.map((sub) => {
     const counts = {};
     bands.forEach((b) => { counts[b.short] = 0; });
@@ -173,7 +176,7 @@ export function computeAnalysis({ examScores, classes, students, subjects, bands
         if (band) counts[band.short] = (counts[band.short] || 0) + 1;
       }
     });
-    return { subject: sub, counts };
+    return { subject: sub, learningArea: sub, counts };
   });
 
   // How many learners land in each performance level, per stream — ordered
@@ -200,25 +203,25 @@ export function computeAnalysis({ examScores, classes, students, subjects, bands
 
   // Overall mean % per gender.
   const genderStats = GENDERS.map((g) => {
-    const genderRows = rows.filter((r) => r.student.gender === g.code);
+    const genderRows = rows.filter((r) => r.student?.gender === g.code);
     const vals = genderRows.map((r) => r.mean).filter((v) => v !== null);
     const meanPercent = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
     const pointVals = genderRows.map((r) => r.meanPoints).filter((v) => v !== null);
     const meanPoints = pointVals.length ? pointVals.reduce((a, b) => a + b, 0) / pointVals.length : null;
-    return { gender: g.code, label: g.label, meanPercent, meanPoints, studentCount: genderRows.length };
+    return { gender: g.code, label: g.label, meanPercent, meanPoints, studentCount: genderRows.length, learnerCount: genderRows.length };
   });
 
-  // Per-subject mean %, broken out by gender (same ranked subject order).
+  // Per-learning-area mean %, broken out by gender (same ranked learning area order).
   const subjectByGender = subjectsRanked.map((sub) => {
     const perGender = {};
     GENDERS.forEach((g) => {
       const vals = rows
-        .filter((r) => r.student.gender === g.code)
+        .filter((r) => r.student?.gender === g.code)
         .map((r) => r.subjScores[sub.id])
         .filter((v) => v !== undefined && v !== null);
       perGender[g.code] = vals.length ? vals.reduce((a, b) => a + Number(b), 0) / vals.length : null;
     });
-    return { subject: sub, perGender };
+    return { subject: sub, learningArea: sub, perGender };
   });
 
   // How many boys/girls land in each overall performance level.
@@ -226,7 +229,7 @@ export function computeAnalysis({ examScores, classes, students, subjects, bands
     const counts = {};
     bands.forEach((b) => { counts[b.short] = 0; });
     rows
-      .filter((r) => r.student.gender === g.code)
+      .filter((r) => r.student?.gender === g.code)
       .forEach((r) => {
         if (r.mean !== null) {
           const band = getBand(r.mean, bands);
@@ -238,13 +241,15 @@ export function computeAnalysis({ examScores, classes, students, subjects, bands
 
   return {
     rows, gradesPresent, gradesPresentRanked, gradeMarkSheets, gradeStats, streamStats,
-    subjectsRanked, subjectByGrade, subjectOverallMean, subjectLevelCounts, streamLevelCounts,
-    genderStats, subjectByGender, genderLevelCounts,
+    subjectsRanked, learningAreasRanked: subjectsRanked, subjectByGrade, learningAreaByGrade: subjectByGrade,
+    subjectOverallMean, learningAreaOverallMean: subjectOverallMean,
+    subjectLevelCounts, learningAreaLevelCounts: subjectLevelCounts, streamLevelCounts,
+    genderStats, subjectByGender, learningAreaByGender: subjectByGender, genderLevelCounts,
   };
 }
 
 // Short initials for a full name — "Jane Doe" -> "JD" — used where space is
-// tight (e.g. the per-subject Teacher column on report cards).
+// tight (e.g. the per-learning-area Teacher column on report cards).
 export function getInitials(name) {
   if (!name) return "";
   return name
@@ -256,15 +261,15 @@ export function getInitials(name) {
     .slice(0, 3);
 }
 
-// An exam with no grade set (or "All Grades") applies to every grade;
+// An assessment with no grade set (or "All Grades") applies to every grade;
 // otherwise it only applies to the one grade it was created for.
 export function examAppliesToGrade(exam, grade) {
   return !exam?.grade || exam.grade === "All Grades" || exam.grade === grade;
 }
 
 // A "term" for selection purposes is a term+year combination, derived from
-// whatever exams already exist (e.g. "Term 2, 2026" covering CAT 1, CAT 2,
-// Mid-Term, End-Term — however many exams were recorded that term).
+// whatever assessments already exist (e.g. "Term 2, 2026" covering CAT 1, CAT 2,
+// Mid-Term, End-Term — however many assessments were recorded that term).
 export function getTermKey(exam) {
   return `${exam?.term ?? ""}|${exam?.year ?? ""}`;
 }
@@ -278,16 +283,16 @@ export function getTermOptions(exams) {
   return Array.from(map.values()).sort((a, b) => (b.year || 0) - (a.year || 0) || (b.term || 0) - (a.term || 0));
 }
 
-// Averages every assessment within a term, per student per subject, so a
-// report card can show "all the assessments for that term" plus an average
-// column. scoresByExam is {examId: {studentId: {subjectId: score}}}.
-export function buildTermAverageScores(examIds, scoresByExam, students, subjects) {
+// Averages every assessment within a term, per learner per learning area, so an
+// assessment report card can show "all the assessments for that term" plus an average
+// column. scoresByExam is {examId: {learnerId: {learningAreaId: score}}}.
+export function buildTermAverageScores(examIds, scoresByExam, learners, learningAreas) {
   const avgScores = {};
   const perExamScores = {};
-  students.forEach((s) => {
+  learners.forEach((s) => {
     avgScores[s.id] = {};
     perExamScores[s.id] = {};
-    subjects.forEach((sub) => {
+    learningAreas.forEach((sub) => {
       const perExam = {};
       const vals = [];
       examIds.forEach((examId) => {
@@ -300,4 +305,120 @@ export function buildTermAverageScores(examIds, scoresByExam, students, subjects
     });
   });
   return { avgScores, perExamScores };
+}
+
+/**
+ * Calculates deviations between current assessment scores and previous assessment scores.
+ * Returns a map keyed by learnerId containing differences for:
+ * - learningAreas (score differences)
+ * - totalMarks (difference in total marks)
+ * - totalPoints (difference in total points)
+ * - meanPercent (difference in mean percentage)
+ * - meanPoints (difference in mean points)
+ * - streamRank (difference in stream rank: positive means climbed ranks)
+ * - gradeRank (difference in grade rank: positive means climbed ranks)
+ */
+export function computeAssessmentDeviations({
+  currentRows,
+  previousScores,
+  classes,
+  learners,
+  learningAreas,
+  bands,
+}) {
+  if (!previousScores || Object.keys(previousScores).length === 0) {
+    return {};
+  }
+
+  // Build previous assessment rows for comparison
+  const prevRows = learners
+    .filter((s) => !s.graduated)
+    .map((s) => {
+      const classObj = classes.find((c) => c.id === s.classId);
+      const grade = getGradeForClass(classObj);
+      const subjScores = {};
+      let total = 0, count = 0, totalPoints = 0;
+      learningAreas.forEach((sub) => {
+        const v = previousScores?.[s.id]?.[sub.id];
+        subjScores[sub.id] = v;
+        if (v !== undefined && v !== null) {
+          total += Number(v);
+          count++;
+          const band = getBand(v, bands);
+          totalPoints += band ? band.points || 0 : 0;
+        }
+      });
+      const mean = count ? total / (learningAreas.length || 1) : null;
+      const meanPoints = count ? totalPoints / (learningAreas.length || 1) : null;
+      return { learnerId: s.id, classObj, grade, subjScores, total, mean, meanPoints, totalPoints, count };
+    })
+    .filter((r) => r.count > 0);
+
+  // Compute previous stream and grade ranks
+  const prevStreamRanks = {};
+  classes.forEach((cls) => {
+    const streamRows = prevRows
+      .filter((r) => r.classObj?.id === cls.id)
+      .sort((a, b) => (b.meanPoints ?? -1) - (a.meanPoints ?? -1));
+    streamRows.forEach((r, i) => { prevStreamRanks[r.learnerId] = i + 1; });
+  });
+
+  const prevGradeRanks = {};
+  const grades = [...new Set(prevRows.map((r) => r.grade))];
+  grades.forEach((g) => {
+    const gradeRows = prevRows
+      .filter((r) => r.grade === g)
+      .sort((a, b) => (b.meanPoints ?? -1) - (a.meanPoints ?? -1));
+    gradeRows.forEach((r, i) => { prevGradeRanks[r.learnerId] = i + 1; });
+  });
+
+  const prevRowMap = new Map(prevRows.map((r) => [r.learnerId, r]));
+  const deviations = {};
+
+  currentRows.forEach((curr) => {
+    const learnerId = curr.learner?.id || curr.student?.id;
+    const prev = prevRowMap.get(learnerId);
+
+    if (!prev) {
+      deviations[learnerId] = null;
+      return;
+    }
+
+    const learningAreaDev = {};
+    learningAreas.forEach((sub) => {
+      const currVal = curr.subjScores?.[sub.id];
+      const prevVal = prev.subjScores?.[sub.id];
+      if (currVal !== undefined && currVal !== null && prevVal !== undefined && prevVal !== null) {
+        learningAreaDev[sub.id] = Number(currVal) - Number(prevVal);
+      } else {
+        learningAreaDev[sub.id] = null;
+      }
+    });
+
+    const totalMarksDev = (curr.total !== null && prev.total !== null) ? (curr.total - prev.total) : null;
+    const totalPointsDev = (curr.totalPoints !== null && prev.totalPoints !== null) ? (curr.totalPoints - prev.totalPoints) : null;
+    const meanPercentDev = (curr.mean !== null && prev.mean !== null) ? (curr.mean - prev.mean) : null;
+    const meanPointsDev = (curr.meanPoints !== null && prev.meanPoints !== null) ? (curr.meanPoints - prev.meanPoints) : null;
+
+    // For ranks: if rank went from 5 to 2, prev (5) - curr (2) = +3 (improvement)
+    const prevSR = prevStreamRanks[learnerId];
+    const currSR = curr.streamRank;
+    const streamRankDev = (prevSR && currSR) ? (prevSR - currSR) : null;
+
+    const prevGR = prevGradeRanks[learnerId];
+    const currGR = curr.gradeRank;
+    const gradeRankDev = (prevGR && currGR) ? (prevGR - currGR) : null;
+
+    deviations[learnerId] = {
+      learningAreas: learningAreaDev,
+      totalMarks: totalMarksDev,
+      totalPoints: totalPointsDev,
+      meanPercent: meanPercentDev,
+      meanPoints: meanPointsDev,
+      streamRank: streamRankDev,
+      gradeRank: gradeRankDev,
+    };
+  });
+
+  return deviations;
 }
