@@ -1,0 +1,35 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    // Cross-product read of the same users/{uid} doc Firestore's rules use,
+    // so storage access follows the same school/role a person already has.
+    function myUser() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+    function isMine(schoolId) {
+      return isSignedIn() && myUser().schoolId == schoolId;
+    }
+    function isAdminOf(schoolId) {
+      return isMine(schoolId) && myUser().role == 'admin';
+    }
+
+    // Profile pictures — anyone in the school can see everyone's (used in
+    // teacher lists), but a person can only upload their own, named after
+    // their own uid so nobody can overwrite someone else's.
+    match /schools/{schoolId}/profiles/{fileName} {
+      allow read: if isMine(schoolId);
+      allow write: if isSignedIn() && fileName == request.auth.uid + ".jpg" && isMine(schoolId);
+    }
+
+    // School logo — shown on the login screen and PDF headers before
+    // sign-in, so it's publicly readable; only that school's admin can
+    // change it.
+    match /schools/{schoolId}/logo.jpg {
+      allow read: if true;
+      allow write: if isAdminOf(schoolId);
+    }
+  }
+}

@@ -1,0 +1,640 @@
+import React, { useState, useEffect } from "react";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList, Alert } from "react-native";
+import { Picker } from "@react-native-picker/picker";
+import { COLORS } from "../utils/constants";
+import {
+  addClass, removeClass, addSubject, removeSubject,
+  addStudent, removeStudent, bulkAddStudents, addExam, removeExam, saveBands,
+  addTeacher, removeTeacher, applyPromotions, setTeacherPassword,
+} from "../utils/db";
+import { buildPromotionPlan, getStreamInitials, ordinal, compareExamOrder } from "../utils/analysis";
+
+const TABS = ["Classes", "Learning Areas", "Learners", "Assessments", "Performance Levels", "Teachers", "Promotion", "Graduated Learners"];
+const GRADES = ["Grade 7", "Grade 8", "Grade 9"];
+const TERMS = ["1", "2", "3"];
+const TEACHER_ROLES = ["Class Teacher", "Subject Teacher", "Head Teacher"];
+const CURRENT_YEAR = new Date().getFullYear();
+
+export default function SetupScreen({ classes, subjects, students, exams, bands, teachers, isAdmin, navigation }) {
+  const [tab, setTab] = useState("Classes");
+  return (
+    <View style={styles.container}>
+      <View style={styles.tabRow}>
+        {TABS.map((t) => (
+          <TouchableOpacity key={t} onPress={() => setTab(t)} style={[styles.tabBtn, tab === t && styles.tabBtnActive]}>
+            <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>{t}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      {tab === "Classes" && <ClassesTab classes={classes} students={students} navigation={navigation} />}
+      {tab === "Learning Areas" && <SubjectsTab subjects={subjects} />}
+      {tab === "Learners" && <StudentsTab classes={classes} students={students} navigation={navigation} />}
+      {tab === "Assessments" && <ExamsTab exams={exams} />}
+      {tab === "Performance Levels" && <BandsTab bands={bands} />}
+      {tab === "Teachers" && <TeachersTab teachers={teachers} classes={classes} subjects={subjects} isAdmin={isAdmin} />}
+      {tab === "Promotion" && <PromotionTab classes={classes} students={students} isAdmin={isAdmin} />}
+      {tab === "Graduated Learners" && <GraduatedLearnersTab classes={classes} students={students} />}
+    </View>
+  );
+}
+
+function Row({ left, right, onRemove, onPress }) {
+  const Wrapper = onPress ? TouchableOpacity : View;
+  return (
+    <View style={styles.row}>
+      <Wrapper style={{ flex: 1 }} onPress={onPress}>
+        <Text style={[styles.rowText, onPress && styles.rowTextLink]}>{left}</Text>
+      </Wrapper>
+      {right}
+      {onRemove && (
+        <TouchableOpacity onPress={onRemove}><Text style={styles.remove}>Remove</Text></TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
+function ClassesTab({ classes, students, navigation }) {
+  const [name, setName] = useState("");
+  const [grade, setGrade] = useState(GRADES[0]);
+  return (
+    <View style={styles.section}>
+      <Text style={styles.label}>Add a class / stream</Text>
+      <View style={styles.pickerWrap}>
+        <Picker selectedValue={grade} onValueChange={setGrade}>
+          {GRADES.map((g) => <Picker.Item key={g} label={g} value={g} />)}
+        </Picker>
+      </View>
+      <View style={styles.inputRow}>
+        <TextInput style={styles.input} placeholder="Stream name, e.g. Green" value={name} onChangeText={setName} />
+        <TouchableOpacity
+          style={styles.addBtn}
+          onPress={() => { if (name.trim()) { addClass(`${grade} ${name.trim()}`, grade); setName(""); } }}
+        >
+          <Text style={styles.addBtnText}>Add</Text>
+        </TouchableOpacity>
+      </View>
+      <FlatList
+        data={classes}
+        keyExtractor={(i) => i.id}
+        renderItem={({ item }) => (
+          <Row
+            left={`${item.name}  ·  ${students.filter((s) => s.classId === item.id && !s.graduated).length} learners`}
+            right={
+              <TouchableOpacity
+                style={styles.viewListBtn}
+                onPress={() => navigation.navigate("ClassList", { classId: item.id })}
+              >
+                <Text style={styles.viewListBtnText}>View List</Text>
+              </TouchableOpacity>
+            }
+            onRemove={() => removeClass(item.id)}
+          />
+        )}
+        ListEmptyComponent={<Text style={styles.empty}>No classes yet.</Text>}
+      />
+    </View>
+  );
+}
+
+function SubjectsTab({ subjects }) {
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  return (
+    <View style={styles.section}>
+      <View style={styles.inputRow}>
+        <TextInput style={[styles.input, { flex: 2 }]} placeholder="Name" value={name} onChangeText={setName} />
+        <TextInput style={[styles.input, { flex: 1 }]} placeholder="Code" value={code} onChangeText={setCode} />
+        <TouchableOpacity style={styles.addBtn} onPress={() => { if (name.trim()) { addSubject(name.trim(), code.trim() || name.slice(0,3).toUpperCase()); setName(""); setCode(""); } }}>
+          <Text style={styles.addBtnText}>Add</Text>
+        </TouchableOpacity>
+      </View>
+      <FlatList
+        data={subjects}
+        keyExtractor={(i) => i.id}
+        renderItem={({ item }) => <Row left={`${item.name} (${item.code})`} onRemove={() => removeSubject(item.id)} />}
+      />
+    </View>
+  );
+}
+
+function StudentsTab({ classes, students, navigation }) {
+  const [name, setName] = useState("");
+  const [assessmentNo, setAssessmentNo] = useState("");
+  const [classId, setClassId] = useState("");
+  const [gender, setGender] = useState("");
+  const [bulkClassId, setBulkClassId] = useState("");
+  const [bulkText, setBulkText] = useState("");
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.label}>Add a learner</Text>
+      <View style={styles.inputRow}>
+        <TextInput style={[styles.input, { flex: 2 }]} placeholder="Full name" value={name} onChangeText={setName} />
+        <TextInput style={[styles.input, { flex: 1 }]} placeholder="Assessment No." value={assessmentNo} onChangeText={setAssessmentNo} />
+      </View>
+      <View style={styles.pickerWrap}>
+        <Picker selectedValue={classId} onValueChange={setClassId}>
+          <Picker.Item label="Select class" value="" />
+          {classes.map((c) => <Picker.Item key={c.id} label={c.name} value={c.id} />)}
+        </Picker>
+      </View>
+      <View style={styles.genderRow}>
+        {[["M", "Male"], ["F", "Female"]].map(([val, label]) => (
+          <TouchableOpacity
+            key={val}
+            style={[styles.genderChip, gender === val && styles.genderChipActive]}
+            onPress={() => setGender(gender === val ? "" : val)}
+          >
+            <Text style={[styles.genderChipText, gender === val && styles.genderChipTextActive]}>{label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <TouchableOpacity
+        style={styles.addBtn}
+        onPress={() => {
+          if (name.trim() && classId) {
+            addStudent(name.trim(), assessmentNo.trim(), classId, gender);
+            setName(""); setAssessmentNo(""); setGender("");
+          }
+        }}
+      >
+        <Text style={styles.addBtnText}>Add learner</Text>
+      </TouchableOpacity>
+
+      <Text style={[styles.label, { marginTop: 20 }]}>Bulk add (one per line: Name, Assessment No., Gender M/F)</Text>
+      <Text style={styles.hintSmall}>Gender is optional — leave it off a line if you don't have it yet.</Text>
+      <View style={styles.pickerWrap}>
+        <Picker selectedValue={bulkClassId} onValueChange={setBulkClassId}>
+          <Picker.Item label="Select class" value="" />
+          {classes.map((c) => <Picker.Item key={c.id} label={c.name} value={c.id} />)}
+        </Picker>
+      </View>
+      <TextInput
+        style={[styles.input, { flex: 0, height: 90, textAlignVertical: "top" }]}
+        placeholder={"Jane Wanjiru, 7210, F\nBrian Otieno, 7211, M"}
+        multiline
+        value={bulkText}
+        onChangeText={setBulkText}
+      />
+      <TouchableOpacity
+        style={styles.addBtn}
+        onPress={async () => {
+          if (!bulkClassId || !bulkText.trim()) return;
+          const rows = bulkText.split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
+            const [n, a, g] = line.split(",").map((p) => p && p.trim());
+            const genderVal = g && /^[mf]$/i.test(g) ? g.toUpperCase() : null;
+            return { name: n || line, admNo: a || "", classId: bulkClassId, gender: genderVal };
+          });
+          await bulkAddStudents(rows);
+          setBulkText("");
+        }}
+      >
+        <Text style={styles.addBtnText}>Add all</Text>
+      </TouchableOpacity>
+
+      <Text style={[styles.label, { marginTop: 20 }]}>Roster ({students.filter((s) => !s.graduated).length} active, {students.filter((s) => s.graduated).length} graduated)</Text>
+      <Text style={styles.hintSmall}>Tap a learner to edit their details.</Text>
+      <FlatList
+        data={students}
+        keyExtractor={(i) => i.id}
+        renderItem={({ item }) => (
+          <Row
+            left={`${item.name}  ·  ${item.admNo || "—"}  ·  ${classes.find((c) => c.id === item.classId)?.name || "—"}${item.gender ? `  ·  ${item.gender}` : ""}${item.graduated ? "  ·  Graduated" : ""}`}
+            onPress={() => navigation.navigate("EditLearner", { studentId: item.id })}
+            onRemove={() => removeStudent(item.id)}
+          />
+        )}
+      />
+    </View>
+  );
+}
+
+function ExamsTab({ exams }) {
+  const [name, setName] = useState("");
+  const [term, setTerm] = useState(TERMS[0]);
+  const [year, setYear] = useState(String(CURRENT_YEAR));
+  const [grade, setGrade] = useState("All Grades");
+  const [sequence, setSequence] = useState(1);
+  return (
+    <View style={styles.section}>
+      <Text style={styles.label}>Add an assessment</Text>
+      <TextInput
+        style={[styles.input, { flex: 0, marginBottom: 10 }]}
+        placeholder="Assessment name, e.g. Mid-Term Assessment"
+        value={name}
+        onChangeText={setName}
+      />
+      <View style={styles.inputRow}>
+        <View style={[styles.pickerWrap, { flex: 1 }]}>
+          <Picker selectedValue={term} onValueChange={setTerm}>
+            {TERMS.map((t) => <Picker.Item key={t} label={`Term ${t}`} value={t} />)}
+          </Picker>
+        </View>
+        <TextInput style={[styles.input, { flex: 1 }]} placeholder="Year" keyboardType="numeric" value={year} onChangeText={setYear} />
+      </View>
+      <Text style={styles.miniLabel}>Which grade is this assessment for?</Text>
+      <View style={styles.pickerWrap}>
+        <Picker selectedValue={grade} onValueChange={setGrade}>
+          <Picker.Item label="All Grades" value="All Grades" />
+          {GRADES.map((g) => <Picker.Item key={g} label={g} value={g} />)}
+        </Picker>
+      </View>
+      <Text style={styles.miniLabel}>Which assessment is this in the term (1st, 2nd, 3rd…)?</Text>
+      <Text style={styles.hintSmall}>Used to work out "previous assessment" for deviation tracking on reports.</Text>
+      <View style={styles.pickerWrap}>
+        <Picker selectedValue={sequence} onValueChange={setSequence}>
+          {[1, 2, 3, 4, 5, 6].map((n) => <Picker.Item key={n} label={ordinal(n)} value={n} />)}
+        </Picker>
+      </View>
+      <TouchableOpacity
+        style={styles.addBtn}
+        onPress={() => { if (name.trim()) { addExam(name.trim(), term, Number(year) || CURRENT_YEAR, grade, sequence); setName(""); } }}
+      >
+        <Text style={styles.addBtnText}>Add assessment</Text>
+      </TouchableOpacity>
+      <FlatList
+        data={[...exams].sort(compareExamOrder)}
+        keyExtractor={(i) => i.id}
+        renderItem={({ item }) => (
+          <Row
+            left={`${item.name}${item.term ? `  ·  Term ${item.term}` : ""}${item.year ? `  ·  ${item.year}` : ""}  ·  ${item.grade || "All Grades"}${item.sequence ? `  ·  ${ordinal(item.sequence)}` : ""}`}
+            onRemove={() => removeExam(item.id)}
+          />
+        )}
+        ListEmptyComponent={<Text style={styles.empty}>No assessments yet.</Text>}
+      />
+    </View>
+  );
+}
+
+function BandsTab({ bands }) {
+  const [local, setLocal] = useState(bands);
+  useEffect(() => { setLocal(bands); }, [bands]);
+  return (
+    <View style={styles.section}>
+      <Text style={styles.hintSmall}>Adjust the raw marks range and points for each performance level, then save.</Text>
+      {local.map((b, i) => (
+        <View key={b.id} style={styles.bandRow}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 }}>
+            <View style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: b.color }} />
+            <Text style={{ fontWeight: "700" }}>{b.short}</Text>
+            <Text style={{ color: COLORS.inkSoft, fontSize: 12 }}>{b.label}</Text>
+          </View>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
+            <View>
+              <Text style={styles.miniLabel}>Raw Marks</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <TextInput
+                  style={[styles.input, { flex: 0, width: 54 }]}
+                  keyboardType="numeric"
+                  value={String(b.min)}
+                  onChangeText={(v) => { const next = [...local]; next[i] = { ...b, min: Number(v) || 0 }; setLocal(next); }}
+                />
+                <Text style={{ color: COLORS.inkSoft }}>-</Text>
+                <TextInput
+                  style={[styles.input, { flex: 0, width: 54 }]}
+                  keyboardType="numeric"
+                  value={String(b.max)}
+                  onChangeText={(v) => { const next = [...local]; next[i] = { ...b, max: Number(v) || 0 }; setLocal(next); }}
+                />
+              </View>
+            </View>
+            <View>
+              <Text style={styles.miniLabel}>Points</Text>
+              <TextInput
+                style={[styles.input, { flex: 0, width: 64 }]}
+                keyboardType="numeric"
+                value={String(b.points ?? 0)}
+                onChangeText={(v) => { const next = [...local]; next[i] = { ...b, points: Number(v) || 0 }; setLocal(next); }}
+              />
+            </View>
+          </View>
+        </View>
+      ))}
+      <TouchableOpacity style={styles.addBtn} onPress={() => saveBands(local)}>
+        <Text style={styles.addBtnText}>Save performance levels</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function TeachersTab({ teachers, classes, subjects, isAdmin }) {
+  const [name, setName] = useState("");
+  const [role, setRole] = useState(TEACHER_ROLES[0]);
+  const [classId, setClassId] = useState("");
+  const [subjectId, setSubjectId] = useState("");
+  const [password, setPassword] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const roleOrder = { "Class Teacher": 0, "Head Teacher": 1, "Subject Teacher": 2 };
+  const nonSubjectTeachers = [...teachers]
+    .filter((t) => t.role !== "Subject Teacher")
+    .sort((a, b) => (roleOrder[a.role] ?? 9) - (roleOrder[b.role] ?? 9) || (a.name || "").localeCompare(b.name || ""));
+
+  // Group subject-teacher records by (name, subject) so "Mathematics, 8Y and
+  // 8G" shows as one row instead of two.
+  const subjectGroups = [];
+  teachers
+    .filter((t) => t.role === "Subject Teacher")
+    .forEach((t) => {
+      const key = `${t.name.trim().toLowerCase()}|${t.subjectId}`;
+      let group = subjectGroups.find((g) => g.key === key);
+      if (!group) {
+        group = { key, name: t.name, subjectId: t.subjectId, classIds: [] };
+        subjectGroups.push(group);
+      }
+      if (t.classId) group.classIds.push(t.classId);
+    });
+  subjectGroups.sort((a, b) => a.name.localeCompare(b.name) || (a.subjectId || "").localeCompare(b.subjectId || ""));
+
+  const resetForm = () => { setName(""); setClassId(""); setSubjectId(""); setPassword(""); };
+
+  const handleAdd = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    try {
+      const ref = await addTeacher(
+        name.trim(),
+        role,
+        role === "Class Teacher" || role === "Subject Teacher" ? classId : null,
+        role === "Subject Teacher" ? subjectId : null
+      );
+      if (password.trim()) {
+        await setTeacherPassword(ref.id, name.trim(), password.trim(), teachers);
+      }
+      resetForm();
+    } catch (e) {
+      Alert.alert("Couldn't add teacher", e?.message || "Something went wrong. Try again.");
+    }
+    setSaving(false);
+  };
+
+  return (
+    <View style={styles.section}>
+      {!isAdmin && (
+        <Text style={styles.hintSmall}>Only an admin can add or remove teachers. You can still view the list below.</Text>
+      )}
+      {isAdmin && (
+        <>
+          <Text style={styles.label}>Add a teacher</Text>
+          <TextInput style={[styles.input, { flex: 0, marginBottom: 10 }]} placeholder="Full name" value={name} onChangeText={setName} />
+          <View style={styles.pickerWrap}>
+            <Picker selectedValue={role} onValueChange={(v) => { setRole(v); setClassId(""); setSubjectId(""); }}>
+              {TEACHER_ROLES.map((r) => <Picker.Item key={r} label={r} value={r} />)}
+            </Picker>
+          </View>
+          {role === "Class Teacher" && (
+            <View style={styles.pickerWrap}>
+              <Picker selectedValue={classId} onValueChange={setClassId}>
+                <Picker.Item label="Select class" value="" />
+                {classes.map((c) => <Picker.Item key={c.id} label={c.name} value={c.id} />)}
+              </Picker>
+            </View>
+          )}
+          {role === "Subject Teacher" && (
+            <>
+              <View style={styles.pickerWrap}>
+                <Picker selectedValue={subjectId} onValueChange={setSubjectId}>
+                  <Picker.Item label="Select learning area" value="" />
+                  {subjects.map((s) => <Picker.Item key={s.id} label={s.name} value={s.id} />)}
+                </Picker>
+              </View>
+              <View style={styles.pickerWrap}>
+                <Picker selectedValue={classId} onValueChange={setClassId}>
+                  <Picker.Item label="Select class / stream they teach it in" value="" />
+                  {classes.map((c) => <Picker.Item key={c.id} label={c.name} value={c.id} />)}
+                </Picker>
+              </View>
+            </>
+          )}
+          <Text style={styles.miniLabel}>App login password (optional)</Text>
+          <Text style={styles.hintSmall}>Leave blank if this teacher doesn't need to sign into the app yet. You can add it later from Profile.</Text>
+          <TextInput
+            style={[styles.input, { flex: 0, marginBottom: 10 }]}
+            placeholder="Password"
+            secureTextEntry
+            value={password}
+            onChangeText={setPassword}
+          />
+          <TouchableOpacity style={styles.addBtn} onPress={handleAdd} disabled={saving}>
+            <Text style={styles.addBtnText}>{saving ? "Adding…" : "Add teacher"}</Text>
+          </TouchableOpacity>
+        </>
+      )}
+
+      <Text style={[styles.label, { marginTop: 22 }]}>
+        Teachers ({new Set(teachers.map((t) => t.name.trim().toLowerCase())).size} people)
+      </Text>
+
+      {nonSubjectTeachers.length > 0 && (
+        <View style={{ marginBottom: 14 }}>
+          {nonSubjectTeachers.map((item) => (
+            <Row
+              key={item.id}
+              left={`${item.name}  ·  ${item.role}${item.classId ? `  ·  ${classes.find((c) => c.id === item.classId)?.name || ""}` : ""}${item.loginEmail ? "  ·  Has login" : ""}`}
+              onRemove={isAdmin ? () => removeTeacher(item.id) : undefined}
+            />
+          ))}
+        </View>
+      )}
+
+      <View style={styles.tableWrap}>
+        <View style={styles.tableHeaderRow}>
+          <Text style={[styles.tableTh, { flex: 1.4 }]}>TEACHER</Text>
+          <Text style={[styles.tableTh, { flex: 0.8, textAlign: "center" }]}>LEARNING AREA</Text>
+          <Text style={[styles.tableTh, { flex: 1, textAlign: "center" }]}>GRADE</Text>
+        </View>
+        {subjectGroups.map((g) => {
+          const subject = subjects.find((s) => s.id === g.subjectId);
+          const gradeLabel = g.classIds
+            .map((cid) => getStreamInitials(classes.find((c) => c.id === cid)))
+            .filter(Boolean)
+            .join(", ");
+          return (
+            <View key={g.key} style={styles.tableRow}>
+              <Text style={[styles.tableTd, { flex: 1.4 }]} numberOfLines={1}>{g.name}</Text>
+              <Text style={[styles.tableTd, { flex: 0.8, textAlign: "center" }]}>{subject?.code || "—"}</Text>
+              <Text style={[styles.tableTd, { flex: 1, textAlign: "center" }]}>{gradeLabel || "—"}</Text>
+            </View>
+          );
+        })}
+        {subjectGroups.length === 0 && <Text style={[styles.empty, { padding: 10 }]}>No subject teachers added yet.</Text>}
+      </View>
+    </View>
+  );
+}
+
+function PromotionTab({ classes, students, isAdmin }) {
+  const [plan, setPlan] = useState(null);
+  const [applying, setApplying] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const activeCount = students.filter((s) => !s.graduated).length;
+
+  const preview = () => {
+    setPlan(buildPromotionPlan(classes, students));
+    setDone(false);
+  };
+
+  const confirm = async () => {
+    if (!plan) return;
+    setApplying(true);
+    try {
+      await applyPromotions(plan.moves, plan.graduates);
+      setPlan(null);
+      setDone(true);
+    } catch (e) {
+      Alert.alert("Couldn't promote learners", e?.message || "Something went wrong. Try again.");
+    }
+    setApplying(false);
+  };
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.label}>Year-end promotion</Text>
+      <Text style={styles.hintSmall}>
+        Moves every active Grade 7 learner to the matching Grade 8 stream, Grade 8 to Grade 9, and
+        marks Grade 9 learners as graduated — removed from active rosters, but kept in history so
+        past reports still work. Currently {activeCount} active learner{activeCount === 1 ? "" : "s"}.
+      </Text>
+
+      {!isAdmin && <Text style={styles.hintSmall}>Only an admin can run this.</Text>}
+
+      {isAdmin && !plan && !done && (
+        <TouchableOpacity style={styles.addBtn} onPress={preview}>
+          <Text style={styles.addBtnText}>Preview promotion</Text>
+        </TouchableOpacity>
+      )}
+
+      {isAdmin && plan && (
+        <View>
+          <Text style={styles.rowText}>{plan.moves.length} learner(s) will move up a grade.</Text>
+          <Text style={styles.rowText}>{plan.graduates.length} Grade 9 learner(s) will graduate.</Text>
+
+          {plan.unresolved.length > 0 && (
+            <>
+              <Text style={[styles.rowText, { color: "#C0392B", fontWeight: "700", marginTop: 10 }]}>
+                {plan.unresolved.length} learner(s) can't be moved yet — no matching class exists:
+              </Text>
+              {plan.unresolved.slice(0, 12).map((u) => (
+                <Text key={u.student.id} style={styles.hintSmall}>
+                  {u.student.name} ({u.fromClass?.name || "—"}) needs a {u.targetGrade} class in the same stream
+                </Text>
+              ))}
+              <Text style={styles.hintSmall}>Create the missing class(es) in the Classes tab, then preview again.</Text>
+            </>
+          )}
+
+          {plan.moves.length === 0 && plan.graduates.length === 0 && (
+            <Text style={styles.hintSmall}>Nothing to promote right now.</Text>
+          )}
+
+          <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
+            <TouchableOpacity
+              style={[styles.addBtn, { flex: 1 }, (plan.moves.length === 0 && plan.graduates.length === 0) && { opacity: 0.5 }]}
+              onPress={confirm}
+              disabled={applying || (plan.moves.length === 0 && plan.graduates.length === 0)}
+            >
+              <Text style={styles.addBtnText}>{applying ? "Promoting…" : "Confirm & promote"}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.addBtn, { flex: 1, backgroundColor: "#fff", borderWidth: 1, borderColor: COLORS.border }]}
+              onPress={() => setPlan(null)}
+              disabled={applying}
+            >
+              <Text style={[styles.addBtnText, { color: COLORS.ink }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {done && <Text style={[styles.rowText, { color: COLORS.ink, fontWeight: "700" }]}>Promotion complete.</Text>}
+    </View>
+  );
+}
+
+function GraduatedLearnersTab({ classes, students }) {
+  const [yearFilter, setYearFilter] = useState("");
+  const [classFilter, setClassFilter] = useState("");
+
+  const graduates = students.filter((s) => s.graduated);
+  const years = [...new Set(graduates.map((s) => s.graduatedYear).filter(Boolean))].sort((a, b) => b - a);
+  const classesWithGraduates = classes.filter((c) => graduates.some((s) => s.classId === c.id));
+
+  const filtered = graduates
+    .filter((s) => !yearFilter || String(s.graduatedYear) === yearFilter)
+    .filter((s) => !classFilter || s.classId === classFilter)
+    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.hintSmall}>
+        Grade 9 learners who have completed junior school. Read-only — to bring someone back onto an
+        active roster, edit them from the Learners tab.
+      </Text>
+
+      <View style={styles.inputRow}>
+        <View style={[styles.pickerWrap, { flex: 1 }]}>
+          <Picker selectedValue={yearFilter} onValueChange={setYearFilter}>
+            <Picker.Item label="All years" value="" />
+            {years.map((y) => <Picker.Item key={y} label={String(y)} value={String(y)} />)}
+          </Picker>
+        </View>
+        <View style={[styles.pickerWrap, { flex: 1 }]}>
+          <Picker selectedValue={classFilter} onValueChange={setClassFilter}>
+            <Picker.Item label="All classes" value="" />
+            {classesWithGraduates.map((c) => <Picker.Item key={c.id} label={c.name} value={c.id} />)}
+          </Picker>
+        </View>
+      </View>
+
+      <Text style={[styles.label, { marginTop: 4 }]}>{filtered.length} graduate{filtered.length === 1 ? "" : "s"}</Text>
+      <FlatList
+        data={filtered}
+        keyExtractor={(i) => i.id}
+        renderItem={({ item }) => (
+          <Row
+            left={`${item.name}  ·  ${item.admNo || "—"}  ·  ${classes.find((c) => c.id === item.classId)?.name || "—"}${item.graduatedYear ? `  ·  Class of ${item.graduatedYear}` : ""}`}
+          />
+        )}
+        ListEmptyComponent={<Text style={styles.empty}>No graduated learners yet.</Text>}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: COLORS.bg, padding: 14 },
+  tabRow: { flexDirection: "row", flexWrap: "wrap", marginBottom: 12, borderBottomWidth: 1, borderColor: COLORS.border },
+  tabBtn: { paddingVertical: 8, paddingHorizontal: 10 },
+  tabBtnActive: { borderBottomWidth: 2, borderColor: COLORS.accent },
+  tabText: { color: COLORS.inkSoft, fontSize: 12 },
+  tabTextActive: { color: COLORS.ink, fontWeight: "700" },
+  section: { flex: 1 },
+  label: { fontWeight: "700", color: COLORS.ink, marginBottom: 8, fontSize: 13.5 },
+  inputRow: { flexDirection: "row", gap: 8, marginBottom: 10 },
+  input: { flex: 1, borderWidth: 1, borderColor: COLORS.border, borderRadius: 6, padding: 10, backgroundColor: "#fff", fontSize: 13.5 },
+  pickerWrap: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 6, backgroundColor: "#fff", marginBottom: 10 },
+  addBtn: { backgroundColor: COLORS.primary, borderRadius: 6, paddingVertical: 10, paddingHorizontal: 14, justifyContent: "center", alignItems: "center" },
+  addBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 9, borderBottomWidth: 1, borderColor: COLORS.border },
+  rowText: { fontSize: 13.5, color: COLORS.ink, flex: 1 },
+  rowTextLink: { color: COLORS.ink, fontWeight: "600" },
+  remove: { color: "#C0392B", fontSize: 12.5, fontWeight: "600" },
+  viewListBtn: { borderWidth: 1, borderColor: COLORS.primary, borderRadius: 5, paddingVertical: 4, paddingHorizontal: 9, marginRight: 10 },
+  viewListBtnText: { color: COLORS.ink, fontSize: 11.5, fontWeight: "700" },
+  empty: { color: COLORS.inkSoft, fontSize: 13, paddingVertical: 10 },
+  hintSmall: { color: COLORS.inkSoft, fontSize: 12.5, marginBottom: 12 },
+  bandRow: { borderBottomWidth: 1, borderColor: COLORS.border, paddingVertical: 12 },
+  miniLabel: { fontSize: 11, color: COLORS.inkSoft, marginBottom: 3 },
+  genderRow: { flexDirection: "row", gap: 8, marginBottom: 10 },
+  genderChip: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 16, paddingVertical: 7, paddingHorizontal: 16, backgroundColor: "#fff" },
+  genderChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  genderChipText: { fontSize: 12.5, color: COLORS.ink, fontWeight: "600" },
+  genderChipTextActive: { color: "#fff" },
+  tableWrap: { backgroundColor: "#fff", borderWidth: 1, borderColor: COLORS.border, borderRadius: 6, overflow: "hidden" },
+  tableHeaderRow: { flexDirection: "row", backgroundColor: COLORS.primary },
+  tableTh: { color: "#fff", fontSize: 10.5, fontWeight: "700", padding: 8 },
+  tableRow: { flexDirection: "row", borderBottomWidth: 1, borderColor: COLORS.border, alignItems: "center" },
+  tableTd: { fontSize: 12, padding: 8, color: COLORS.ink },
+});

@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "Junior School Analytics",
+    "slug": "junior-school-analytics",
+    "owner": "mikemunga",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#3498DB"
+    },
+    "android": {
+      "package": "com.jsa.schoolanalytics",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#3498DB"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/43ca3a5b-bade-4f21-808c-abcefbf79493"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "43ca3a5b-bade-4f21-808c-abcefbf79493"
+      }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Junior School Analytics to access your photos so you can set a profile picture or school logo."
+        }
+      ]
+    ]
+  }
+}

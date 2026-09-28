@@ -1,0 +1,93 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    // Every signed-in person has a users/{uid} doc saying which school they
+    // belong to and whether they're the admin or a teacher there. This is
+    // what makes every school's data invisible to every other school.
+    function myUser() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function mySchoolId() {
+      return myUser().schoolId;
+    }
+    function isMine(schoolId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && mySchoolId() == schoolId;
+    }
+    function isAdminOf(schoolId) {
+      return isMine(schoolId) && myUser().role == 'admin';
+    }
+
+    // Maps a signed-in uid -> their school + role. A person can always read
+    // their own doc (to know who they are). It's created once at account
+    // creation: by the person themself when they create a new school
+    // (admin), or by that school's admin when they issue a teacher login.
+    match /users/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow create: if isSignedIn() && (
+        request.auth.uid == uid ||
+        isAdminOf(request.resource.data.schoolId)
+      );
+      allow update: if isSignedIn() && (
+        request.auth.uid == uid || isAdminOf(resource.data.schoolId)
+      );
+    }
+
+    // Public name -> schoolId lookup so the login screen can resolve a
+    // school before anyone is signed in. A name can only be claimed once
+    // (first person to register it), which also prevents two different
+    // schools from colliding on the same name.
+    match /schoolDirectory/{name} {
+      allow read: if true;
+      allow create: if isSignedIn() && !exists(/databases/$(database)/documents/schoolDirectory/$(name));
+      allow update, delete: if false;
+    }
+
+    // Everyday data — isolated per school. Any signed-in member of a school
+    // (admin or teacher) can read/write that school's own records; nobody
+    // can touch another school's.
+    match /schools/{schoolId}/classes/{id}  { allow read, write: if isMine(schoolId); }
+    match /schools/{schoolId}/subjects/{id} { allow read, write: if isMine(schoolId); }
+    match /schools/{schoolId}/students/{id} { allow read, write: if isMine(schoolId); }
+    match /schools/{schoolId}/exams/{id}    { allow read, write: if isMine(schoolId); }
+    match /schools/{schoolId}/scores/{id}   { allow read, write: if isMine(schoolId); }
+
+    // Teachers directory — any member of the school can read (needed for
+    // auto-filled remarks), only that school's admin can add/remove.
+    match /schools/{schoolId}/teachers/{id} {
+      allow read: if isMine(schoolId);
+      allow write: if isAdminOf(schoolId);
+    }
+
+    match /schools/{schoolId}/settings/bands {
+      allow read, write: if isMine(schoolId);
+    }
+
+    // School details (name, address, logo, term dates) — publicly readable
+    // (even signed out) since the login screen shows the school name before
+    // sign-in; only that school's admin can change it.
+    match /schools/{schoolId}/settings/meta {
+      allow read: if true;
+      allow write: if isAdminOf(schoolId);
+    }
+
+    // Public directory mapping teacher name -> login email for this school,
+    // read before anyone is signed in so the login screen can resolve who's
+    // who. Only that school's admin can update it (done automatically
+    // whenever a teacher's login is created).
+    match /schools/{schoolId}/settings/teacherLogins {
+      allow read: if true;
+      allow write: if isAdminOf(schoolId);
+    }
+
+    // Each person's own profile (picture, display name) within their
+    // school — only they can read or write it, keyed by their own auth uid.
+    match /schools/{schoolId}/profiles/{uid} {
+      allow read, write: if isSignedIn() && request.auth.uid == uid;
+    }
+  }
+}

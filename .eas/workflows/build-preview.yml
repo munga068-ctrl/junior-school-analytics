@@ -1,0 +1,18 @@
+name: Build Android APK (preview)
+
+# Manual only — does not run automatically on push, so it never competes with
+# publish-update.yml for build-minute quota. Trigger it from the EAS dashboard's
+# "Run workflow" button, or with:
+#   eas workflow:run .eas/workflows/build-preview.yml
+# Use this when a change adds a native package, or edits app.json's icon,
+# splash, package name, or permissions.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build_android:
+    name: Build Android APK
+    type: build
+    params:
+      platform: android
+      profile: preview
